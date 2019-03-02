@@ -9,7 +9,10 @@
 -->
 <style>
   html {
-    background: #555;
+    background: rgb(33, 28, 81);
+    color: white;
+    font: sans-serif;
+
   }
 
   h1 {
@@ -17,26 +20,32 @@
     font: 20px/1.5 sans-serif;
   }
 
-/*
+
   .terminal {
-    float: left;
+    float: right;
     border: #000 solid 5px;
     font-family: "DejaVu Sans Mono", "Liberation Mono", monospace;
-    font-size: 11px;
+    font-size: 12px;
     color: #f0f0f0;
-    background: #000;
+    background-color: rgb(43, 13, 58);
   }
 
   .terminal-cursor {
     color: #000;
     background: #f0f0f0;
   }
-*/
 
   .file-box {
     margin: 4px;
     padding: 4px;
     background: #888;
+  }
+
+  .scratchpad {
+    /* display:inline-block; */
+    /* float: right; */
+    /* vertical-align:top;  */
+    /* width:450px; */
   }
 </style>
 <script src="term.js"></script>
@@ -45,40 +54,78 @@
 <body>
 
 <div style="display:inline-block; vertical-align:top;">
-<form>
-<input type="text" name="webrepl_url" id="url" value="ws://192.168.4.1:8266/" />
-<input type="submit" id="button" value="Connect" onclick="button_click(); return false;" />
-</form>
-<div id="term">
+        
+<div id="file-boxes" style="width:600px;">
+        Host address <input type="text" name="webrepl_url" id="url" value="ws://ESP2:8266/" />
+        <input type="submit" id="button" value="Connect" onclick="button_click(); return false;" />
+        <br>
+        <h1>
+
+            Scratchpad
+        </h1>
+                <textarea class='scratchpad' id="scratchpad0" onkeypress='scratchpadKeypress(0,event)' rows="10" cols="80">
+print("Hello")
+for i in range(10):
+    print("Line ", i)
+
+def test():
+    print("Hello")
+    
+test()
+                            </textarea>
+                <i>Ctrl-Enter to send entire scratchpad to REPL<br>
+                <i>Shift-Enter to send current selection to REPL<br><br>
+          <div class="file-box">
+                            <button onclick='save_buffer()'>Save file</button>
+                                <input  id='put_filename' />
+            <!-- <strong>Send a file</strong>
+            <!-- <input type="file" id="put-file-select" /> -->
+            <!-- <div id="put-file-list"></div>
+            <input type="button" value="Send to device" id="put-file-button" onclick="put_file(); return false;" /> --> 
+          </div>
+        
+          <div class="file-box">
+            <strong>Get a file</strong>
+            <input type="text" name="get_filename" id="get_filename" value="" size="13" />
+            <input type="button" value="Get from device" onclick="get_file(); return false;" />
+          </div>
+        
+          <div class="file-box" id="file-status">(file operation status)</span></div>
+        
+        </div>
+    </div>     
+
+    
+<div class='terminal' id="term">
+        <h1>REPL</h1>
 </div>
-</div>
 
-<div id="file-boxes" style="display:inline-block; vertical-align:top; width:230px;">
-
-  <div class="file-box">
-    <strong>Send a file</strong>
-    <input type="file" id="put-file-select" />
-    <div id="put-file-list"></div>
-    <input type="button" value="Send to device" id="put-file-button" onclick="put_file(); return false;" />
-  </div>
-
-  <div class="file-box">
-    <strong>Get a file</strong>
-    <input type="text" name="get_filename" id="get_filename" value="" size="13" />
-    <input type="button" value="Get from device" onclick="get_file(); return false;" />
-  </div>
-
-  <div class="file-box" id="file-status"><span style="color:#707070">(file operation status)</span></div>
 
 </div>
 
-<br clear="both" />
+
+<!-- <br clear="both" /> -->
+<br>
 <i>Terminal widget should be focused (text cursor visible) to accept input. Click on it if not.</i><br/>
 <i>To paste, press Ctrl+A, then Ctrl+V</i>
 </body>
 
+
+<link rel="stylesheet" href="lib/codemirror.css">
+<script src="https://cdn.jsdelivr.net/npm/codemirror@5.44.0/lib/codemirror.min.js"></script>
 <script>
-;
+  var editor = CodeMirror.fromTextArea(document.getElementById("scratchpad0"), {
+    lineNumbers: true,
+    extraKeys: {
+        "Ctrl-Enter" : function(cm) {
+            sendText(cm.getValue());
+        },
+        "Shift-Enter" : function(cm) {
+            sendText(cm.getSelection());
+        }
+
+    }
+  });
 
 var term;
 var ws;
@@ -90,8 +137,8 @@ var get_file_name = null;
 var get_file_data = null;
 
 function calculate_size(win) {
-    var cols = Math.max(80, Math.min(150, (win.innerWidth - 280) / 7)) | 0;
-    var rows = Math.max(24, Math.min(80, (win.innerHeight - 180) / 12)) | 0;
+    var cols = Math.max(80, Math.min(120, (win.innerWidth - 280) / 7)) | 0;
+    var rows = Math.max(24, Math.min(40, (win.innerHeight - 180) / 12)) | 0;
     return [cols, rows];
 }
 
@@ -101,12 +148,14 @@ function calculate_size(win) {
       term = new Terminal({
         cols: size[0],
         rows: size[1],
-        useStyle: true,
+        //useStyle: true,
         screenKeys: true,
-        cursorBlink: false
+        cursorBlink: false,
+
       });
       term.open(document.getElementById("term"));
       show_https_warning();
+      button_click();
     };
     window.addEventListener('resize', function() {
         var size = calculate_size(self);
@@ -152,6 +201,7 @@ function connect(url) {
     ws = new WebSocket(url);
     ws.binaryType = 'arraybuffer';
     ws.onopen = function() {
+        ws.send("noeadou\n");
         term.removeAllListeners('data');
         term.on('data', function(data) {
             // Pasted data from clipboard will likely contain
@@ -230,7 +280,8 @@ function connect(url) {
                         // final response
                         if (decode_resp(data) == 0) {
                             update_file_status('Got ' + get_file_name + ', ' + get_file_data.length + ' bytes');
-                            saveAs(new Blob([get_file_data], {type: "application/octet-stream"}), get_file_name);
+                            //saveAs(new Blob([get_file_data], {type: "application/octet-stream"}), get_file_name);
+                            editor.setValue(Array.from(get_file_data).map(x => String.fromCharCode(x)).join(''))
                         } else {
                             update_file_status('Failed getting ' + get_file_name);
                         }
@@ -255,7 +306,33 @@ function connect(url) {
         term.off('data');
         prepare_for_connect();
     }
+
 }
+
+function sendText(text) {
+    text += "\n\n\n\n";
+    text = text
+        .replace(/\n/g, "\r\n")
+        .replace(/\t/g, '   ');
+        ;
+    //text = `exec('${text}')`;
+    ws.send(text);
+}
+function send(idx) {
+    var data = document.getElementById("scratchpad" + idx).value;
+    sendText(data);
+}
+
+function clear(idx) {
+    document.getElementById("scratchpad" + idx).value = ""
+}
+
+function scratchpadKeypress(idx,evt) {
+    if(evt.code == "Enter" && evt.ctrlKey) {
+        send(idx);
+    }
+}
+
 
 function decode_resp(data) {
     if (data[0] == 'W'.charCodeAt(0) && data[1] == 'B'.charCodeAt(0)) {
@@ -266,6 +343,11 @@ function decode_resp(data) {
     }
 }
 
+function save_buffer() {
+    put_file_name = document.getElementById('put_filename').value;
+    put_file_data = new Uint8Array(editor.getValue().split('').map(x => x.charCodeAt(0)));
+    put_file();
+}
 function put_file() {
     var dest_fname = put_file_name;
     var dest_fsize = put_file_data.length;
