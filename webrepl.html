@@ -92,6 +92,8 @@ def test():
 <script src='https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.44.0/mode/python/python.min.js'></script>
 
 <script>
+"use strict"
+
   var editor = CodeMirror.fromTextArea(document.getElementById("scratchpad0"), {
     lineNumbers: true,
     mode: 'python',
@@ -100,11 +102,37 @@ def test():
             sendText(cm.getValue());
         },
         "Shift-Enter" : function(cm) {
-            sendText(cm.getSelection());
+            var selection = cm.getSelection()
+            if(selection == "") {
+                var currentLine = cm.getCursor().line;
+                selection = cm.getLine(currentLine);
+                cm.setCursor(currentLine+1);
+            }
+            // if by now the selection is not empty...
+            if(selection != "")
+                sendText(selection);
+
         }
 
     }
   });
+
+
+var SERVICE_MESSAGE_EVENT = 'SERVICE_MESSAGE_EVENT';
+var FILE_PUT_EVENT = 'FILE_PUT_EVENT';
+
+var listeners = {}
+function addListener(eventType, name, cb) {
+    document.addEventListener(eventType, cb);
+    listeners[name] = cb;
+}
+
+function removeListener(eventType, name) {
+    document.removeEventListener(eventType, listeners[name]);
+    delete(listeners[name]);
+}
+
+
 
 var term;
 var ws;
@@ -189,7 +217,7 @@ function connect(url) {
     ws = new WebSocket(url);
     ws.binaryType = 'arraybuffer';
     ws.onopen = function() {
-        //ws.send("\n");
+        ws.send("\n");
         term.removeAllListeners('data');
         term.on('data', function(data) {
             // Pasted data from clipboard will likely contain
@@ -223,12 +251,17 @@ function connect(url) {
                         break;
                     case 12:
                         // final response for put
-                        if (decode_resp(data) == 0) {
+                        var success = decode_resp(data) == 0;
+                        if (success) {
                             update_file_status('Sent ' + put_file_name + ', ' + put_file_data.length + ' bytes');
                         } else {
                             update_file_status('Failed sending ' + put_file_name);
                         }
+                        var fileSaveEvent = new CustomEvent(FILE_PUT_EVENT, { 
+                            detail: { success, name: put_file_name }
+                        });
                         binary_state = 0;
+                        document.dispatchEvent(fileSaveEvent);
                         break;
 
                     case 21:
@@ -281,20 +314,23 @@ function connect(url) {
                         console.log('GET_VER', data);
                         binary_state = 0;
                         break;
-                    case 40:
                 }
             }
-
-            if(binary_state == 40) {
+            else if(serviceMessageInProcess) {
                 if(event.data == '>>> ') {
-                    var totalMessage = serviceMessage.replace(serviceMessageSent,"");
-                    console.log("Total message: ", totalMessage);
-                    serviceCallback(totalMessage);
+                    console.log("Complete message: ", serviceMessageResponse);
+                    var serviceMessageEventCompleted = new CustomEvent(SERVICE_MESSAGE_EVENT, {
+                        detail: {
+                            message: serviceMessageResponse
+                        }
+                    });
 
-                    binary_state = 0;
+                    document.dispatchEvent(serviceMessageEventCompleted)
+                    term.write(serviceMessageResponse);
+                    ws.send("\n\n");
                 }
                 else {
-                    serviceMessage += event.data;
+                    serviceMessageResponse += event.data;
                 }
             }
             else {
@@ -308,6 +344,7 @@ function connect(url) {
 
     ws.onclose = function() {
         connected = false;
+        startUpReady = false;
         replReady = false;
         if (term) {
             term.write('\x1b[31mDisconnected\x1b[m\r\n');
@@ -318,37 +355,64 @@ function connect(url) {
 
 }
 
-var serviceMessage = "";
-var serviceMessageSent = "";
-var serviceCallback = undefined;
+var serviceMessageInProcess = false;
+var serviceMessageResponse = "";
+
 function sendServiceMessage(message, cb) {
-    serviceMessage = "";
-    serviceMessageSent = message;
-    binary_state = 40;
-    serviceCallback = cb;
+    console.log("Sending service message: ", message);
+    var serviceMessageSent = message + "\r\n";
+
+    serviceMessageInProcess = true;
+    serviceMessageResponse = "";
+
+    addListener(SERVICE_MESSAGE_EVENT, serviceMessageSent, function(e) {
+        console.log("Received response: ", e.detail.message);
+        var serviceMessageResponse = e.detail.message.replace(serviceMessageSent,"");
+        removeListener(SERVICE_MESSAGE_EVENT, serviceMessageSent);
+        serviceMessageInProcess = false;
+        if(cb != undefined) {
+            cb(serviceMessageResponse);
+        }
+    });
+
     ws.send(serviceMessageSent);
 }
 
+var startUpReady = false;
+var STARTUP_FILE = "_webrepl_utils";
+function checkStartUp(cb) {
+    if(startUpReady) {
+        cb();
+        return;
+    }
+
+    startUpReady = true;
+    var startup_code = `
+import os
+def execute_file(file_name):
+    text = open(file_name).read()
+    print(text)
+    print("*" * 40)
+    try:
+        exec(text)
+    except Exception as e:
+        print("Could not run %s: %s" % (file_name,e))
+    os.remove(file_name)
+
+print("Initialization completed")`
+    save_buffer(STARTUP_FILE + ".py", startup_code, cb);
+}
 
 function sendText(text) {
-    text += "\n\n\n\n";
-    text = text
-        .replace(/\n/g, "\r\n")
-        .replace(/\t/g, '   ');
-        ;
-    //text = `exec("""${text}""")\n\n\n\n`;
-    bytes = text.split('').map(t => t.charCodeAt(0));
-    command = `
-_bytes = ${JSON.stringify(bytes)}
-_code = ''.join([ chr(b) for b in _bytes ])
-exec(_code)
-    `
-
-    command += "\n\n\n\n";
-    command = command.replace(/\n/g, "\r\n")
-        .replace(/\t/g, '   ');
-
-    ws.send(text);
+    checkStartUp(() => {
+        var tmpFileName = `_tmpScratch.py`;
+        // the reason we need to do it this way is that when sending text as is, the server automatically
+        // adds indentation to help in interactive mode
+        save_buffer(tmpFileName, text, cb => { 
+            sendServiceMessage(`import ${STARTUP_FILE}; ${STARTUP_FILE}.execute_file('${tmpFileName}')`); 
+    //        sendServiceMessage(`exec(open('${tmpFileName}').read()); os.remove('${tmpFileName}')\r\n`); 
+        });
+    });
 }
 function send(idx) {
     var data = document.getElementById("scratchpad" + idx).value;
@@ -375,9 +439,20 @@ function decode_resp(data) {
     }
 }
 
-function save_buffer() {
-    put_file_name = document.getElementById('put_filename').value;
-    put_file_data = new Uint8Array(editor.getValue().split('').map(x => x.charCodeAt(0)));
+function save_buffer(file_name = undefined, contents = undefined, cb = undefined) {
+    if(file_name == undefined)
+        put_file_name = document.getElementById('put_filename').value;
+    else
+        put_file_name = file_name;
+
+    if(contents == undefined)
+        contents = editor.getValue();
+    put_file_data = new Uint8Array(contents.split('').map(x => x.charCodeAt(0)));
+    addListener(FILE_PUT_EVENT, put_file_name, e => 
+        { 
+            removeListener(FILE_PUT_EVENT, put_file_name);
+            if(cb != undefined) cb(e.detail);
+        });
     put_file();
 }
 function put_file() {
@@ -401,7 +476,6 @@ function put_file() {
         }
     }
 
-    debugger;
     // initiate put
     binary_state = 11;
     update_file_status('Sending ' + put_file_name + '...');
@@ -475,7 +549,7 @@ var app = angular.module('webrepl',[]);
 app
     .controller('main', function($scope) {
         $scope.refreshDirectories = function() {
-            sendServiceMessage("\r\nos.listdir()\r\n", result => {
+            sendServiceMessage("os.listdir()", result => {
                 $scope.files = JSON.parse(result.replace(/'/g,'"'));
                 $scope.fileName = $scope.files[0];
                 $scope.$apply();
