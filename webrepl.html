@@ -26,8 +26,8 @@
     <!-- <div style="display:inline-block; vertical-align:top;"> -->
             
             <div id="file-boxes">
-                <button id='button' onclick="button_click(); return false;" >Connect
-                    </button>
+                <input type='button' id='connect_button' value='Connect' onclick="button_click(); return false;" />
+                <button onclick="reset(); button_click();">Soft reset</button>
                     <input type="text" name="webrepl_url" id="url" value="ws://ESP2:8266/" />
                     <br>
                     <h1>
@@ -60,6 +60,8 @@ def test():
                         <select ng-model='fileName'>
                             <option ng-repeat='file in files'>{{file}}</option>
                         </select>
+                        <button ng-click='runFile()'>Run</button>
+                        <button ng-click='importFile()'>Import</button>
                     </div>
                     
                     <div class="file-box" id="file-status">...</span></div>                    
@@ -120,6 +122,31 @@ def test():
 
 var SERVICE_MESSAGE_EVENT = 'SERVICE_MESSAGE_EVENT';
 var FILE_PUT_EVENT = 'FILE_PUT_EVENT';
+
+var PYTHON_RESETMACHINE = 'import time, machine; print("Resetting..."); time.sleep(1); machine.reset()'
+var PYTHON_STARTUPDEFINITIONS = `
+import os, time
+def execute_file(file_name, tmp_file = False):
+    text = open(file_name).read()
+    # removing the file before anything bad can happen
+    if tmp_file:
+        os.remove(file_name)
+
+    banner = "========================    %s    ========================"
+    print(banner % file_name)
+    print(text)
+    print("=" * ( len(banner) - 2 + len(file_name) ) )
+    try:
+        start_time = time.ticks_us()
+        exec(text,globals())
+        end_time = time.ticks_us()
+        print("=== %.3fms elapsed" % ((end_time-start_time)/1000.0))
+    except Exception as e:
+        print("Could not run %s: %s" % (file_name,e))
+
+print("Initialization completed")
+`
+
 
 var listeners = {}
 function addListener(eventType, name, cb) {
@@ -185,12 +212,15 @@ function show_https_warning() {
     }
 }
 
+function reset() {
+    sendServiceMessage(PYTHON_RESETMACHINE)
+}
 function button_click() {
     if (connected) {
         ws.close();
     } else {
         document.getElementById('url').disabled = true;
-        document.getElementById('button').value = "Disconnect";
+        document.getElementById('connect_button').value = "Disconnect";
         connected = true;
         connect(document.getElementById('url').value);
     }
@@ -198,7 +228,7 @@ function button_click() {
 
 function prepare_for_connect() {
     document.getElementById('url').disabled = false;
-    document.getElementById('button').value = "Connect";
+    document.getElementById('connect_button').value = "Connect";
 }
 
 function update_file_status(s) {
@@ -211,6 +241,14 @@ function sendBuffer(buffer) {
         console.log(offset, " --> ", offset + 1024);
         ws.send(buffer.slice(offset, offset + 1024));
     }
+}
+
+function getPrompt(data) {
+    var promptSymbol = />>> $/;
+    var prompt = ">>> ";
+    if (data.match(promptSymbol))
+        data = data.replace(promptSymbol, new Date().toLocaleTimeString() + " " + prompt);
+    term.write(data);
 }
 
 function connect(url) {
@@ -327,7 +365,7 @@ function connect(url) {
 
                     document.dispatchEvent(serviceMessageEventCompleted)
                     term.write(serviceMessageResponse);
-                    ws.send("\n\n");
+                    term.write(getPrompt(event.data));
                 }
                 else {
                     serviceMessageResponse += event.data;
@@ -337,7 +375,7 @@ function connect(url) {
                 // if(event.data.indexOf("WebREPL connected")>=0)
                 //     refreshDirectories();
                 replReady = true;
-                term.write(event.data);
+                term.write(getPrompt(event.data));
             }
         };
     };
@@ -359,6 +397,11 @@ var serviceMessageInProcess = false;
 var serviceMessageResponse = "";
 
 function sendServiceMessage(message, cb) {
+    if(serviceMessageInProcess) {
+        console.log("Service message already in process");
+        return;
+    }
+
     console.log("Sending service message: ", message);
     var serviceMessageSent = message + "\r\n";
 
@@ -387,20 +430,12 @@ function checkStartUp(cb) {
     }
 
     startUpReady = true;
-    var startup_code = `
-import os
-def execute_file(file_name):
-    text = open(file_name).read()
-    print(text)
-    print("*" * 40)
-    try:
-        exec(text)
-    except Exception as e:
-        print("Could not run %s: %s" % (file_name,e))
-    os.remove(file_name)
+    save_buffer(STARTUP_FILE + ".py", PYTHON_STARTUPDEFINITIONS, cb);
+}
 
-print("Initialization completed")`
-    save_buffer(STARTUP_FILE + ".py", startup_code, cb);
+function executeFile(fileName, useTempName = false) {
+    var deleteFile = useTempName ? "True" : "False"
+    sendServiceMessage(`import ${STARTUP_FILE}; ${STARTUP_FILE}.execute_file('${fileName}',${deleteFile})`); 
 }
 
 function sendText(text) {
@@ -408,9 +443,8 @@ function sendText(text) {
         var tmpFileName = `_tmpScratch.py`;
         // the reason we need to do it this way is that when sending text as is, the server automatically
         // adds indentation to help in interactive mode
-        save_buffer(tmpFileName, text, cb => { 
-            sendServiceMessage(`import ${STARTUP_FILE}; ${STARTUP_FILE}.execute_file('${tmpFileName}')`); 
-    //        sendServiceMessage(`exec(open('${tmpFileName}').read()); os.remove('${tmpFileName}')\r\n`); 
+        save_buffer(tmpFileName, text, data => { 
+            executeFile(tmpFileName, true);
         });
     });
 }
@@ -561,6 +595,14 @@ app
 
         $scope.getfile = function() {
             get_file($scope.fileName);
+        }
+
+        $scope.runFile = function() {
+            executeFile($scope.fileName, false);
+        }
+        $scope.importFile = function() {
+            var module = $scope.fileName.replace(/.py$/,"");
+            sendServiceMessage(`import ${module}`);
         }
     })
 
