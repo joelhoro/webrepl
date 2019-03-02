@@ -47,7 +47,7 @@ def test():
                             <i>Shift-Enter to send current selection to REPL<br><br>
                     <div class="file-box">
                                         <button class='btn' onclick='save_buffer()'>Save file</button>
-                                            <input  id='put_filename' ng-model='fileName' >
+                                            <input  id='put_filename' ng-model='fileName' /> 
                         <!-- <strong>Send a file</strong>
                         <!-- <input type="file" id="put-file-select" /> -->
                         <!-- <div id="put-file-list"></div>
@@ -57,8 +57,10 @@ def test():
                     <div class="file-box">
                         <button ng-click='refreshDirectories()'>Refresh directory</button> 
                         <button class='btn'  ng-click="getfile()" >Get from device</button>
-                        <select ng-model='fileName'>
-                            <option ng-repeat='file in files'>{{file}}</option>
+                        <select id='fileSelector' ng-model='activeFileIdx' ng-change="changeFolder()">
+                            <option ng-repeat='file in files track by $index' value='{{$index}}'>
+                                {{file.displayName}} ({{file.size}} bytes)
+                            </option>
                         </select>
                         <button ng-click='runFile()'>Run</button>
                         <button ng-click='importFile()'>Import</button>
@@ -103,6 +105,9 @@ def test():
         "Ctrl-Enter" : function(cm) {
             sendText(cm.getValue());
         },
+        "Ctrl-S" : function(cm) {
+            save_buffer();
+        },
         "Shift-Enter" : function(cm) {
             var selection = cm.getSelection()
             if(selection == "") {
@@ -122,6 +127,9 @@ def test():
 
 var SERVICE_MESSAGE_EVENT = 'SERVICE_MESSAGE_EVENT';
 var FILE_PUT_EVENT = 'FILE_PUT_EVENT';
+
+var FILETYPE_FOLDER = 0x4000;
+var FILETYPE_FILE = 0x8000;
 
 var PYTHON_RESETMACHINE = 'import time, machine; print("Resetting..."); time.sleep(1); machine.reset()'
 var PYTHON_STARTUPDEFINITIONS = `
@@ -217,6 +225,7 @@ function show_https_warning() {
 function reset() {
     sendServiceMessage(PYTHON_RESETMACHINE)
 }
+
 function button_click() {
     if (connected) {
         ws.close();
@@ -481,6 +490,9 @@ function save_buffer(file_name = undefined, contents = undefined, cb = undefined
     else
         put_file_name = file_name;
 
+    if(put_file_name == "")
+        return;
+
     if(contents == undefined)
         contents = editor.getValue();
     put_file_data = new Uint8Array(contents.split('').map(x => x.charCodeAt(0)));
@@ -585,9 +597,28 @@ var app = angular.module('webrepl',[]);
 app
     .controller('main', function($scope) {
         $scope.refreshDirectories = function() {
-            sendServiceMessage("os.listdir()", result => {
-                $scope.files = JSON.parse(result.replace(/'/g,'"'));
-                $scope.fileName = $scope.files[0];
+            sendServiceMessage("[ [f,list(os.stat(f))] for f in os.listdir() ]", result => {
+                var rawfiles = JSON.parse(result.replace(/'/g,'"'));
+                var files = rawfiles.map(record => {
+                    var folder = record[1][0] == FILETYPE_FOLDER;
+                    var name = record[0];
+                    return {
+                        name: name,
+                        size: record[1][6],
+                        folder,
+                    }
+                });
+                files = [
+                    {name: "..", size: 0, folder: true }
+                ].concat(files);
+
+                $scope.files = files.map(record => {
+                    record.displayName = (record.folder?"<--- " : "") + record.name
+                        + (record.folder?" --->" : "")
+                    return record;
+                });
+                
+                $scope.activeFileIdx = 0;
                 $scope.$apply();
             });
         }
@@ -596,7 +627,18 @@ app
         window.refreshDirectories = $scope.refreshDirectories;
 
         $scope.getfile = function() {
-            get_file($scope.fileName);
+            var fileName = $scope.files[$scope.activeFileIdx].name;
+            get_file(fileName);
+        }
+
+        $scope.changeFolder = function() {
+            var file = $scope.files[$scope.activeFileIdx];
+            if(file.folder) 
+                sendServiceMessage(`os.chdir("${file.name}")`,
+                () => $scope.refreshDirectories());
+            else {
+                $scope.fileName = file.name;
+            }
         }
 
         $scope.runFile = function() {
