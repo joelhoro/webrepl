@@ -138,7 +138,9 @@ def execute_file(file_name, tmp_file = False):
     print("=" * ( len(banner) - 2 + len(file_name) ) )
     try:
         start_time = time.ticks_us()
-        exec(text,globals())
+        ### really not clear if we should pass globals or not...
+        #exec(text,globals())
+        exec(text)
         end_time = time.ticks_us()
         print("=== %.3fms elapsed" % ((end_time-start_time)/1000.0))
     except Exception as e:
