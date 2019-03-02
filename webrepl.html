@@ -7,115 +7,94 @@
   Copyright (c) 2012-2013, Christopher Jeffrey (MIT License)
   Copyright (c) 2016, Paul Sokolovsky
 -->
-<style>
-  html {
-    background: rgb(33, 28, 81);
-    color: white;
-    font: sans-serif;
+<!-- <link href="https://stackpath.bootstrapcdn.com/bootstrap/4.3.1/css/bootstrap.min.css" rel="stylesheet" integrity="sha384-ggOyR0iXCbMQv3Xipma34MD+dH/1fQ784/j6cY/iJTQUOhcWr7x9JvoRxT2MZw1T" crossorigin="anonymous"> -->
 
-  }
-
-  h1 {
-    margin-bottom: 20px;
-    font: 20px/1.5 sans-serif;
-  }
-
-
-  .terminal {
-    float: right;
-    border: #000 solid 5px;
-    font-family: "DejaVu Sans Mono", "Liberation Mono", monospace;
-    font-size: 12px;
-    color: #f0f0f0;
-    background-color: rgb(43, 13, 58);
-  }
-
-  .terminal-cursor {
-    color: #000;
-    background: #f0f0f0;
-  }
-
-  .file-box {
-    margin: 4px;
-    padding: 4px;
-    background: #888;
-  }
-
-  .scratchpad {
-    /* display:inline-block; */
-    /* float: right; */
-    /* vertical-align:top;  */
-    /* width:450px; */
-  }
-</style>
+<script src="https://ajax.googleapis.com/ajax/libs/angularjs/1.5.6/angular.min.js"></script>
 <script src="term.js"></script>
 <script src="FileSaver.js"></script>
 </head>
 <body>
 
-<div style="display:inline-block; vertical-align:top;">
-        
-<div id="file-boxes" style="width:600px;">
-        Host address <input type="text" name="webrepl_url" id="url" value="ws://ESP2:8266/" />
-        <input type="submit" id="button" value="Connect" onclick="button_click(); return false;" />
-        <br>
-        <h1>
+<div ng-app='webrepl' ng-controller='main'>
 
-            Scratchpad
-        </h1>
-                <textarea class='scratchpad' id="scratchpad0" onkeypress='scratchpadKeypress(0,event)' rows="10" cols="80">
+
+<table>
+    <col width='60%'>
+    <col width='40%'>
+    <tr>
+        <td>
+    <!-- <div style="display:inline-block; vertical-align:top;"> -->
+            
+            <div id="file-boxes">
+                <button id='button' onclick="button_click(); return false;" >Connect
+                    </button>
+                    <input type="text" name="webrepl_url" id="url" value="ws://ESP2:8266/" />
+                    <br>
+                    <h1>
+            
+                        Scratchpad
+                    </h1>
+                            <textarea class='scratchpad' id="scratchpad0" onkeypress='scratchpadKeypress(0,event)' rows="10" cols="80">
 print("Hello")
 for i in range(10):
     print("Line ", i)
 
 def test():
     print("Hello")
-    
-test()
-                            </textarea>
-                <i>Ctrl-Enter to send entire scratchpad to REPL<br>
-                <i>Shift-Enter to send current selection to REPL<br><br>
-          <div class="file-box">
-                            <button onclick='save_buffer()'>Save file</button>
-                                <input  id='put_filename' />
-            <!-- <strong>Send a file</strong>
-            <!-- <input type="file" id="put-file-select" /> -->
-            <!-- <div id="put-file-list"></div>
-            <input type="button" value="Send to device" id="put-file-button" onclick="put_file(); return false;" /> --> 
-          </div>
-        
-          <div class="file-box">
-            <strong>Get a file</strong>
-            <input type="text" name="get_filename" id="get_filename" value="" size="13" />
-            <input type="button" value="Get from device" onclick="get_file(); return false;" />
-          </div>
-        
-          <div class="file-box" id="file-status">(file operation status)</span></div>
-        
-        </div>
-    </div>     
 
+                                        </textarea>
+                            <i>Ctrl-Enter to send entire scratchpad to REPL<br>
+                            <i>Shift-Enter to send current selection to REPL<br><br>
+                    <div class="file-box">
+                                        <button class='btn' onclick='save_buffer()'>Save file</button>
+                                            <input  id='put_filename' ng-model='fileName' >
+                        <!-- <strong>Send a file</strong>
+                        <!-- <input type="file" id="put-file-select" /> -->
+                        <!-- <div id="put-file-list"></div>
+                        <input type="button" value="Send to device" id="put-file-button" onclick="put_file(); return false;" /> --> 
+                    </div>
+                    
+                    <div class="file-box">
+                        <button ng-click='refreshDirectories()'>Refresh directory</button> 
+                        <button class='btn'  ng-click="getfile()" >Get from device</button>
+                        <select ng-model='fileName'>
+                            <option ng-repeat='file in files'>{{file}}</option>
+                        </select>
+                    </div>
+                    
+                    <div class="file-box" id="file-status">...</span></div>                    
+                
+                    </div>
+                    <!-- <br clear="both" /> -->
+                    <br>
+                    <i>Terminal widget should be focused (text cursor visible) to accept input. Click on it if not.</i><br/>
+                    <i>To paste, press Ctrl+A, then Ctrl+V</i>
+
+                </div>     
+        
+        </td>
+        <td>
+            <div class='terminal' id="term">
+                    <h1>REPL</h1>
+            </div>
+        </td>
+    </tr>
+</table>
     
-<div class='terminal' id="term">
-        <h1>REPL</h1>
 </div>
 
 
-</div>
-
-
-<!-- <br clear="both" /> -->
-<br>
-<i>Terminal widget should be focused (text cursor visible) to accept input. Click on it if not.</i><br/>
-<i>To paste, press Ctrl+A, then Ctrl+V</i>
 </body>
 
-
+<link rel="stylesheet" href="style.css">
 <link rel="stylesheet" href="lib/codemirror.css">
 <script src="https://cdn.jsdelivr.net/npm/codemirror@5.44.0/lib/codemirror.min.js"></script>
+<script src='https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.44.0/mode/python/python.min.js'></script>
+
 <script>
   var editor = CodeMirror.fromTextArea(document.getElementById("scratchpad0"), {
     lineNumbers: true,
+    mode: 'python',
     extraKeys: {
         "Ctrl-Enter" : function(cm) {
             sendText(cm.getValue());
@@ -130,6 +109,7 @@ test()
 var term;
 var ws;
 var connected = false;
+var replReady = false;
 var binary_state = 0;
 var put_file_name = null;
 var put_file_data = null;
@@ -137,8 +117,8 @@ var get_file_name = null;
 var get_file_data = null;
 
 function calculate_size(win) {
-    var cols = Math.max(80, Math.min(120, (win.innerWidth - 280) / 7)) | 0;
-    var rows = Math.max(24, Math.min(40, (win.innerHeight - 180) / 12)) | 0;
+    var cols = Math.max(80, Math.min(120, (win.innerWidth - 500) / 12)) | 0;
+    var rows = Math.max(24, Math.min(40, (win.innerHeight - 220) / 18)) | 0;
     return [cols, rows];
 }
 
@@ -197,11 +177,19 @@ function update_file_status(s) {
     document.getElementById('file-status').innerHTML = s;
 }
 
+function sendBuffer(buffer) {
+    console.log("Sending buffer: ", buffer);
+    for (var offset = 0; offset < buffer.length; offset += 1024) {
+        console.log(offset, " --> ", offset + 1024);
+        ws.send(buffer.slice(offset, offset + 1024));
+    }
+}
+
 function connect(url) {
     ws = new WebSocket(url);
     ws.binaryType = 'arraybuffer';
     ws.onopen = function() {
-        ws.send("noeadou\n");
+        //ws.send("\n");
         term.removeAllListeners('data');
         term.on('data', function(data) {
             // Pasted data from clipboard will likely contain
@@ -216,7 +204,8 @@ function connect(url) {
 
         term.focus();
         term.element.focus();
-        term.write('\x1b[31mWelcome to MicroPython!\x1b[m\r\n');
+        term.write('\x1b[32mWelcome to MicroPython!\x1b[m\r\n');
+        //refreshDirectories();
 
         ws.onmessage = function(event) {
             if (event.data instanceof ArrayBuffer) {
@@ -292,14 +281,34 @@ function connect(url) {
                         console.log('GET_VER', data);
                         binary_state = 0;
                         break;
+                    case 40:
                 }
             }
-            term.write(event.data);
+
+            if(binary_state == 40) {
+                if(event.data == '>>> ') {
+                    var totalMessage = serviceMessage.replace(serviceMessageSent,"");
+                    console.log("Total message: ", totalMessage);
+                    serviceCallback(totalMessage);
+
+                    binary_state = 0;
+                }
+                else {
+                    serviceMessage += event.data;
+                }
+            }
+            else {
+                // if(event.data.indexOf("WebREPL connected")>=0)
+                //     refreshDirectories();
+                replReady = true;
+                term.write(event.data);
+            }
         };
     };
 
     ws.onclose = function() {
         connected = false;
+        replReady = false;
         if (term) {
             term.write('\x1b[31mDisconnected\x1b[m\r\n');
         }
@@ -309,13 +318,36 @@ function connect(url) {
 
 }
 
+var serviceMessage = "";
+var serviceMessageSent = "";
+var serviceCallback = undefined;
+function sendServiceMessage(message, cb) {
+    serviceMessage = "";
+    serviceMessageSent = message;
+    binary_state = 40;
+    serviceCallback = cb;
+    ws.send(serviceMessageSent);
+}
+
+
 function sendText(text) {
     text += "\n\n\n\n";
     text = text
         .replace(/\n/g, "\r\n")
         .replace(/\t/g, '   ');
         ;
-    //text = `exec('${text}')`;
+    //text = `exec("""${text}""")\n\n\n\n`;
+    bytes = text.split('').map(t => t.charCodeAt(0));
+    command = `
+_bytes = ${JSON.stringify(bytes)}
+_code = ''.join([ chr(b) for b in _bytes ])
+exec(_code)
+    `
+
+    command += "\n\n\n\n";
+    command = command.replace(/\n/g, "\r\n")
+        .replace(/\t/g, '   ');
+
     ws.send(text);
 }
 function send(idx) {
@@ -369,15 +401,14 @@ function put_file() {
         }
     }
 
+    debugger;
     // initiate put
     binary_state = 11;
     update_file_status('Sending ' + put_file_name + '...');
     ws.send(rec);
 }
 
-function get_file() {
-    var src_fname = document.getElementById('get_filename').value;
-
+function get_file(src_fname) {
     // WEBREPL_FILE = "<2sBBQLH64s"
     var rec = new Uint8Array(2 + 1 + 1 + 8 + 4 + 2 + 64);
     rec[0] = 'W'.charCodeAt(0);
@@ -433,12 +464,31 @@ function handle_put_file_select(evt) {
     reader.readAsArrayBuffer(f);
 }
 
-document.getElementById('put-file-select').addEventListener('click', function(){
-    this.value = null;
-}, false);
+// document.getElementById('put-file-select').addEventListener('click', function(){
+//     this.value = null;
+// }, false);
 
-document.getElementById('put-file-select').addEventListener('change', handle_put_file_select, false);
-document.getElementById('put-file-button').disabled = true;
+// document.getElementById('put-file-select').addEventListener('change', handle_put_file_select, false);
+// document.getElementById('put-file-button').disabled = true;
+
+var app = angular.module('webrepl',[]);
+app
+    .controller('main', function($scope) {
+        $scope.refreshDirectories = function() {
+            sendServiceMessage("\r\nos.listdir()\r\n", result => {
+                $scope.files = JSON.parse(result.replace(/'/g,'"'));
+                $scope.fileName = $scope.files[0];
+                $scope.$apply();
+            });
+        }
+
+        // QUICK HACK REALLY
+        window.refreshDirectories = $scope.refreshDirectories;
+
+        $scope.getfile = function() {
+            get_file($scope.fileName);
+        }
+    })
 
 </script>
 

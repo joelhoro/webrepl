@@ -1,0 +1,42 @@
+  html {
+    background: rgb(33, 28, 81);
+    color: white;
+    font: 14px sans-serif;
+    
+}
+
+
+  h1 {
+    margin-bottom: 20px;
+    font: 20px/1.5 sans-serif;
+  }
+
+  td {
+      vertical-align: top;
+  }
+  .terminal {
+    float: right;
+    border: #000 solid 5px;
+    font-family: "DejaVu Sans Mono", "Liberation Mono", monospace;
+    font-size: 18px;
+    color: #f0f0f0;
+    background-color: rgb(43, 13, 58);
+  }
+
+  .terminal-cursor {
+    color: #000;
+    background: #f0f0f0;
+  }
+
+  .file-box {
+    margin: 4px;
+    padding: 4px;
+    background: rgb(43, 3, 26);
+  }
+
+  .scratchpad {
+    /* display:inline-block; */
+    /* float: right; */
+    /* vertical-align:top;  */
+    /* width:450px; */
+  }
