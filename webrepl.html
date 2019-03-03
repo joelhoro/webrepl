@@ -169,16 +169,15 @@ print("Initialization completed")
 var cpuAnimationInterval = undefined;
 var listeners = {}
 function addListener(eventType, name, cb) {
-    document.addEventListener(eventType, cb);
     var eventKey = eventType + "/" + name;
+    document.addEventListener(eventType, data => {
+        document.removeEventListener(eventType, listeners[eventKey]);
+        delete(listeners[eventKey]);
+        cb(data);
+    });
     listeners[eventKey] = cb;
 }
 
-function removeListener(eventType, name) {
-    var eventKey = eventType + "/" + name;
-    document.removeEventListener(eventType, listeners[eventKey]);
-    delete(listeners[eventKey]);
-}
 
 
 
@@ -462,12 +461,9 @@ function sendServiceMessage(message, cb, viewOutput = false) {
     addListener(SERVICE_MESSAGE_EVENT, serviceMessageSent, function(e) {
         console.log("Received response: ", e.detail.message);
         var serviceMessageResponse = e.detail.message.replace(serviceMessageSent,"");
-        removeListener(SERVICE_MESSAGE_EVENT, serviceMessageSent);
         serviceMessageInProcess = false;
         serviceMessageViewOutput = false;
-        if(cb != undefined) {
-            cb(serviceMessageResponse);
-        }
+        cb(serviceMessageResponse);
         stopAnimation();
     });
 
@@ -527,7 +523,10 @@ function decode_resp(data) {
     }
 }
 
+var noop = () => {};
+
 function save_buffer(file_name = undefined, contents = undefined, cb = undefined) {
+    cb = cb || noop;
     if(file_name == undefined)
         put_file_name = document.getElementById('put_filename').value;
     else
@@ -540,11 +539,7 @@ function save_buffer(file_name = undefined, contents = undefined, cb = undefined
         contents = editor.getValue();
 
     put_file_data = new Uint8Array(contents.split('').map(x => x.charCodeAt(0)));
-    addListener(FILE_PUT_EVENT, put_file_name, e => 
-        { 
-            removeListener(FILE_PUT_EVENT, put_file_name);
-            if(cb != undefined) cb(e.detail);
-        });
+    addListener(FILE_PUT_EVENT, put_file_name, e => cb(e.detail));
     put_file();
 }
 
@@ -576,12 +571,7 @@ function put_file() {
 }
 
 function get_file(src_fname, cb) {
-
-    addListener(FILE_GET_EVENT, src_fname, e => 
-        { 
-            removeListener(FILE_GET_EVENT, src_fname);
-            if(cb != undefined) cb(e.detail);
-        });
+    addListener(FILE_GET_EVENT, src_fname, e => cb(e.detail))
 
     // WEBREPL_FILE = "<2sBBQLH64s"
     var rec = new Uint8Array(2 + 1 + 1 + 8 + 4 + 2 + 64);
