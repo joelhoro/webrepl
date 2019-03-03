@@ -30,9 +30,9 @@
                 <button onclick="reset(); button_click();">Soft reset</button>
                     <input type="text" name="webrepl_url" id="url" value="ws://ESP2:8266/" />
                     <br>
-                    <h1>
-            
-                        Scratchpad
+                    <h1>Scratchpad
+
+                        <img id='cpu' src='cpu2.png' width='20' hidden>
                     </h1>
                             <textarea class='scratchpad' id="scratchpad0" onkeypress='scratchpadKeypress(0,event)' rows="10" cols="80">
 print("Hello")
@@ -73,13 +73,14 @@ def test():
                     <br>
                     <i>Terminal widget should be focused (text cursor visible) to accept input. Click on it if not.</i><br/>
                     <i>To paste, press Ctrl+A, then Ctrl+V</i>
-
+                    
                 </div>     
         
         </td>
         <td>
             <div class='terminal' id="term">
                     <h1>REPL</h1>
+                    
             </div>
         </td>
     </tr>
@@ -133,12 +134,13 @@ var FILETYPE_FILE = 0x8000;
 
 var PYTHON_RESETMACHINE = 'import time, machine; print("Resetting..."); time.sleep(1); machine.reset()'
 var PYTHON_STARTUPDEFINITIONS = `
-import os, time
-def execute_file(file_name, tmp_file = False):
+import os, time, sys
+
+def execute_file(file_name, tmp_file, globals, locals):
     text = open(file_name).read()
     # removing the file before anything bad can happen
     if tmp_file:
-        os.remove(file_name)
+           os.remove(file_name)
 
     banner = "========================    %s    ========================"
     print(banner % file_name)
@@ -146,9 +148,7 @@ def execute_file(file_name, tmp_file = False):
     print("=" * ( len(banner) - 2 + len(file_name) ) )
     try:
         start_time = time.ticks_us()
-        ### really not clear if we should pass globals or not...
-        #exec(text,globals())
-        exec(text)
+        exec(text, globals, locals)
         end_time = time.ticks_us()
         print("=== %.3fms elapsed" % ((end_time-start_time)/1000.0))
     except Exception as e:
@@ -157,7 +157,7 @@ def execute_file(file_name, tmp_file = False):
 print("Initialization completed")
 `
 
-
+var cpuAnimationInterval = undefined;
 var listeners = {}
 function addListener(eventType, name, cb) {
     document.addEventListener(eventType, cb);
@@ -259,7 +259,7 @@ function getPrompt(data) {
     var prompt = ">>> ";
     if (data.match(promptSymbol))
         data = data.replace(promptSymbol, new Date().toLocaleTimeString() + " " + prompt);
-    term.write(data);
+    return data;
 }
 
 function connect(url) {
@@ -374,9 +374,11 @@ function connect(url) {
                         }
                     });
 
+                    if(serviceMessageViewOutput) {
+                        term.write(serviceMessageResponse);
+                        term.write(getPrompt(event.data));
+                    }
                     document.dispatchEvent(serviceMessageEventCompleted)
-                    term.write(serviceMessageResponse);
-                    term.write(getPrompt(event.data));
                 }
                 else {
                     serviceMessageResponse += event.data;
@@ -406,13 +408,31 @@ function connect(url) {
 
 var serviceMessageInProcess = false;
 var serviceMessageResponse = "";
+var serviceMessageViewOutput = false;
 
-function sendServiceMessage(message, cb) {
+function startAnimation() {
+    var hidden = false;
+    clearInterval(cpuAnimationInterval);
+    cpuAnimationInterval = setInterval(() => {
+        hidden = !hidden;
+        document.getElementById('cpu').hidden = hidden;
+    },200)
+}
+
+function stopAnimation() {
+    if(cpuAnimationInterval != undefined)
+        clearInterval(cpuAnimationInterval);
+    document.getElementById('cpu').hidden = true;
+}
+
+function sendServiceMessage(message, cb, viewOutput = false) {
     if(serviceMessageInProcess) {
         console.log("Service message already in process");
         return;
     }
 
+    startAnimation();
+    serviceMessageViewOutput = viewOutput;
     console.log("Sending service message: ", message);
     var serviceMessageSent = message + "\r\n";
 
@@ -424,9 +444,11 @@ function sendServiceMessage(message, cb) {
         var serviceMessageResponse = e.detail.message.replace(serviceMessageSent,"");
         removeListener(SERVICE_MESSAGE_EVENT, serviceMessageSent);
         serviceMessageInProcess = false;
+        serviceMessageViewOutput = false;
         if(cb != undefined) {
             cb(serviceMessageResponse);
         }
+        stopAnimation();
     });
 
     ws.send(serviceMessageSent);
@@ -444,9 +466,9 @@ function checkStartUp(cb) {
     save_buffer(STARTUP_FILE + ".py", PYTHON_STARTUPDEFINITIONS, cb);
 }
 
-function executeFile(fileName, useTempName = false) {
+function executeFile(fileName, useTempName = false, viewOutput) {
     var deleteFile = useTempName ? "True" : "False"
-    sendServiceMessage(`import ${STARTUP_FILE}; ${STARTUP_FILE}.execute_file('${fileName}',${deleteFile})`); 
+    sendServiceMessage(`import ${STARTUP_FILE}; ${STARTUP_FILE}.execute_file('${fileName}',${deleteFile},globals(),locals())`, undefined, viewOutput); 
 }
 
 function sendText(text) {
@@ -455,7 +477,7 @@ function sendText(text) {
         // the reason we need to do it this way is that when sending text as is, the server automatically
         // adds indentation to help in interactive mode
         save_buffer(tmpFileName, text, data => { 
-            executeFile(tmpFileName, true);
+            executeFile(tmpFileName, true, true);
         });
     });
 }
@@ -620,7 +642,7 @@ app
                 
                 $scope.activeFileIdx = 0;
                 $scope.$apply();
-            });
+            }, false);
         }
 
         // QUICK HACK REALLY
@@ -635,18 +657,18 @@ app
             var file = $scope.files[$scope.activeFileIdx];
             if(file.folder) 
                 sendServiceMessage(`os.chdir("${file.name}")`,
-                () => $scope.refreshDirectories());
+                () => $scope.refreshDirectories(), false);
             else {
                 $scope.fileName = file.name;
             }
         }
 
         $scope.runFile = function() {
-            executeFile($scope.fileName, false);
+            executeFile($scope.fileName, false, true);
         }
         $scope.importFile = function() {
             var module = $scope.fileName.replace(/.py$/,"");
-            sendServiceMessage(`import ${module}`);
+            sendServiceMessage(`import ${module}`, undefined, true);
         }
     })
 
