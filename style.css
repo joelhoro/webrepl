@@ -34,7 +34,25 @@
     background: rgb(43, 3, 26);
   }
 
+  .buffer {
+    cursor: pointer;
+    padding: 5px;
+    margin: 2px;
+    border: 1px white solid;
+    border-radius: 5px;
+}
+
+.activeBuffer {
+    background-color: rgb(255, 255, 255);
+    color: darkblue;
+}
+
+.activeBuffer > span {
+    font-weight: 'bold';
+    
+}
   .scratchpad {
+      margin: 20px;
     /* display:inline-block; */
     /* float: right; */
     /* vertical-align:top;  */
