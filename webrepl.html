@@ -22,7 +22,7 @@
         <td>            
             <div id="file-boxes">
                 <button id='connect_button' value='Connect' onclick="button_click(); return false;" ></button>
-                <button onclick="reset(); button_click();">Soft reset</button>
+                <button class='softreset' onclick="reset(); button_click();">Soft reset</button>
                     <input type="text" name="webrepl_url" id="url" value="ws://ESP2:8266/" />
                     <br>
                     <h1>
@@ -30,23 +30,22 @@
                         <img id='cpu' src='cpu2.png' width='20' hidden>
                     </h1>
                     
-                    <div class="file-box">
+                    <div ng-show='files.length > 0' class="file-box">
                         <button ng-click='refreshDirectories()'>Refresh directory</button> 
-                        <!-- <button class='btn'  ng-click="getfile()" >Get from device</button> -->
-                        <select id='fileSelector' ng-model='activeFileIdx' ng-change="changeFolder()">
+                        <select  id='fileSelector' ng-model='activeFileIdx' ng-change="changeFileSelection()">
                             <option ng-repeat='file in files track by $index' value='{{$index}}'>
                                 {{file.displayName}}
                             </option>
                         </select>
                     </div>
                     <div class="file-box">
-                        <button class='btn' ng-click='saveBuffer()'>Save '{{activeBuffer.path}}</button>
-                        <button class='btn' ng-click='deleteBuffer()'>Delete '{{activeBuffer.path}}'</button>
+                        <button class='btn' ng-click='saveBuffer()'>Save</button>
+                        <button class='btn' ng-click='deleteBuffer()'>Delete</button>
                         <button ng-click='runFile()'>Run</button>
                         <button ng-click='importFile()'>Import</button>
                     </div>
         
-                    <span ng-click='activate(buffer)' ng-repeat='buffer in buffers' class='buffer {{ buffer == activeBuffer ? "activeBuffer" : ""}}'>
+                    <span ng-click='activateBuffer(buffer)' ng-repeat='buffer in buffers' class='buffer {{ buffer == activeBuffer ? "activeBuffer" : ""}}'>
                             <span   >{{buffer.path}}{{(buffer.isModified()?"*":"")}}</span>
                             <span class='bufferClose' ng-click='closeBuffer(buffer)'>&nbsp;&nbsp;X</span>
                         </span>
@@ -125,12 +124,14 @@
 
 var cpuAnimationInterval = undefined;
 var listeners = {}
-function addListener(eventType, name, cb) {
+function addListener(eventType, name, cb, temporary = true) {
     var eventKey = eventType + "/" + name;
-    var registeredCallback = data => {
-        document.removeEventListener(eventType, listeners[eventKey]);
-        delete(listeners[eventKey]);
-        cb(data);
+    var registeredCallback = event => {
+        if(temporary) {
+            document.removeEventListener(eventType, listeners[eventKey]);
+            delete(listeners[eventKey]);
+        }
+        cb(event.detail);
     };
     document.addEventListener(eventType,registeredCallback);
     listeners[eventKey] = registeredCallback;
@@ -195,9 +196,16 @@ function reset() {
 function button_click() {
     if (connected) {
         ws.close();
+
+        document.dispatchEvent(new CustomEvent(WR.REPL_READY_EVENT, { detail: { ready: false } }));
+        document.getElementById('connect_button').classList.remove('connected');
+        document.getElementById('connect_button').classList.add('disconnected');
     } else {
         document.getElementById('url').disabled = true;
         document.getElementById('connect_button').innerHTML = "Disconnect";
+        document.getElementById('connect_button').classList.add('connected');
+        document.getElementById('connect_button').classList.remove('disconnected');
+
         connected = true;
         connect(document.getElementById('url').value);
     }
@@ -222,6 +230,8 @@ function sendBuffer(buffer) {
 }
 
 function getPrompt(data) {
+    if(data.indexOf("WebREPL connected")>=0)
+        document.dispatchEvent(new CustomEvent(WR.REPL_READY_EVENT, { detail: { ready: true } }));
     var promptSymbol = />>> $/;
     var prompt = ">>> ";
     if (data.match(promptSymbol))
@@ -253,7 +263,6 @@ function connect(url) {
         term.focus();
         term.element.focus();
         term.write('\x1b[32mWelcome to MicroPython!\x1b[m\r\n');
-        //refreshDirectories();
 
         ws.onmessage = function(event) {
             if (event.data instanceof ArrayBuffer) {
@@ -272,11 +281,6 @@ function connect(url) {
                     case FileTransfer.BINARYSTATE_PUT_FINAL_RESPONSE:
                         // final response for put
                         var success = FileTransfer.decodeResponse(data) == 0;
-                        if (success) {
-                            update_file_status('Sent ' + put_file_name + ', ' + put_file_data.length + ' bytes');
-                        } else {
-                            update_file_status('Failed sending ' + put_file_name);
-                        }
                         var fileSaveEvent = new CustomEvent(WR.FILE_PUT_EVENT, { 
                             detail: { success, name: put_file_name }
                         });
@@ -321,21 +325,16 @@ function connect(url) {
                     case FileTransfer.BINARYSTATE_GET_FINAL_RESPONSE:
                         // final response
                         binary_state = FileTransfer.BINARYSTATE_IDLE;
-                        if (FileTransfer.decodeResponse(data) == 0) {
-                            update_file_status('Got ' + get_file_name + ', ' + get_file_data.length + ' bytes');
-                            //saveAs(new Blob([get_file_data], {type: "application/octet-stream"}), get_file_name);
+                        var success = FileTransfer.decodeResponse(data) == 0;
+                        var fileGetEvent = new CustomEvent(WR.FILE_GET_EVENT, { 
+                            detail: { 
+                                success,
+                                contentBinary: get_file_data, 
+                                name: get_file_name 
+                            }
+                        });
+                        document.dispatchEvent(fileGetEvent);
 
-                            var fileGetEvent = new CustomEvent(WR.FILE_GET_EVENT, { 
-                                detail: { 
-                                    success,
-                                    contentBinary: get_file_data, 
-                                    name: get_file_name 
-                                }
-                            });
-                            document.dispatchEvent(fileGetEvent);
-                        } else {
-                            update_file_status('Failed getting ' + get_file_name);
-                        }
                         break;
                         
                     case FileTransfer.BINARYSTATE_GET_VERSION:
@@ -418,9 +417,9 @@ function sendServiceMessage(message, cb, viewOutput = false) {
     serviceMessageInProcess = true;
     serviceMessageResponse = "";
 
-    addListener(WR.SERVICE_MESSAGE_EVENT, serviceMessageSent, function(e) {
-        console.log("Received response: ", e.detail.message);
-        var serviceMessageResponse = e.detail.message.replace(serviceMessageSent,"");
+    addListener(WR.SERVICE_MESSAGE_EVENT, serviceMessageSent, function(detail) {
+        console.log("Received response: ", detail.message);
+        var serviceMessageResponse = detail.message.replace(serviceMessageSent,"");
         serviceMessageInProcess = false;
         serviceMessageViewOutput = false;
         (cb||NOOP)(serviceMessageResponse);
@@ -465,7 +464,15 @@ function save_buffer(file_name, contents, cb) {
         return;
 
     put_file_data = new Uint8Array(contents.split('').map(x => x.charCodeAt(0)));
-    addListener(WR.FILE_PUT_EVENT, put_file_name, e => (cb||NOOP)(e.detail));
+    addListener(WR.FILE_PUT_EVENT, put_file_name, detail => {
+        if (detail.success) {
+            update_file_status('Sent ' + put_file_name + ', ' + put_file_data.length + ' bytes');
+        } else {
+            update_file_status('Failed sending ' + put_file_name);
+        }
+
+        (cb||NOOP)(detail);
+    });
     put_file(put_file_name, put_file_data);
 }
 
@@ -480,7 +487,15 @@ function put_file(dest_fname, dest_data) {
 }
 
 function get_file(src_fname, cb) {
-    addListener(WR.FILE_GET_EVENT, src_fname, e => cb(e.detail))
+    addListener(WR.FILE_GET_EVENT, src_fname, detail => {
+        if (detail.success) {
+            update_file_status('Got ' + get_file_name + ', ' + get_file_data.length + ' bytes');
+        } else {
+            update_file_status('Failed getting ' + get_file_name);
+        }
+
+        cb(detail);
+    })
     var rec = FileTransfer.createRequest(FileTransfer.REQUESTTYPE_GET, src_fname);
 
     // initiate get
@@ -565,24 +580,24 @@ app
             }, false);
         }
 
-
-        $scope.getfile = function() {
-            var fileName = $scope.files[$scope.activeFileIdx].name;
-            
-            get_file(fileName, detail => {
-                var contentText = Array.from(detail.contentBinary).map(x => String.fromCharCode(x)).join(''); 
-                var buffer = new Buffer(fileName, contentText);
-                $scope.addBuffer(buffer);
-            });
-        }
-
-        $scope.changeFolder = function() {
+        $scope.changeFileSelection = function() {
             var file = $scope.files[$scope.activeFileIdx];
-            if(file.folder) 
+            if(file.folder) {
                 sendServiceMessage(`os.chdir("${file.name}"); os.getcwd()  ### switching directories`,
                 () => $scope.refreshDirectories(), true);
-            else 
-                $scope.getfile();
+            }
+            else {
+                var buffers = $scope.buffers.filter(buffer => buffer.path == file.name);
+                if(buffers.length == 1)
+                    $scope.activateBuffer(buffers[0])
+                else
+                    get_file(file.name, detail => {
+                        var contentText = Array.from(detail.contentBinary).map(x => String.fromCharCode(x)).join(''); 
+                        var buffer = new Buffer(file.name, contentText);
+                        $scope.addBuffer(buffer);
+                        $scope.$apply();
+                    });
+            }
         }
 
         $scope.runFile = function() {
@@ -598,7 +613,17 @@ app
             editor.setValue($scope.scratchpad);
         }
 
-        $scope.activate = function(buffer) {
+        $scope.addBuffer = function(buffer) {
+            $scope.buffers= $scope.buffers.concat([buffer]);            
+            $scope.activateBuffer(buffer);
+        }
+
+        $scope.newBuffer = function() {
+            var buffer = Buffer.blank();
+            $scope.addBuffer(buffer);
+        }
+
+        $scope.activateBuffer = function(buffer) {
             $scope.activeBuffer = buffer;
             $scope.scratchpad = $scope.activeBuffer.contents;
             $scope.updateScratchpad();
@@ -626,22 +651,14 @@ app
                 $scope.newBuffer();
                 idx++;
             }
-            $scope.activate($scope.buffers[idx-1]);
+            $scope.activateBuffer($scope.buffers[idx-1]);
+            $scope.$apply();
         }
 
-        $scope.addBuffer = function(buffer) {
-            $scope.buffers.push(buffer);            
-            $scope.activeBuffer = buffer;
-        }
-
-        $scope.newBuffer = function() {
-            var buffer = Buffer.blank();
-            $scope.addBuffer(buffer);
-        }
 
         $scope.buffers = [];
         $scope.newBuffer();
-        $scope.activate($scope.buffers[0]);
+        $scope.activateBuffer($scope.buffers[0]);
 
         editor.on('change', function(cm) {
             $scope.activeBuffer.contents = cm.getValue();
@@ -654,13 +671,21 @@ app
 
         // QUICK HACK REALLY - we should combine the angular
         // code and the non-angular one
-        window.refreshDirectories = $scope.refreshDirectories;
         window.saveBuffer = $scope.saveBuffer;
         window.newBuffer = $scope.newBuffer;
 
         // and this is because we're using type='module'
         window.button_click = button_click
         window.reset = reset;
+
+        addListener(WR.REPL_READY_EVENT, undefined, detail => {
+            if(detail.ready)
+                $scope.refreshDirectories()
+            else {
+                $scope.files = [];
+                $scope.$apply();
+            }
+        }, false);
 
     })
 

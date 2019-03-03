@@ -83,3 +83,15 @@ input {
     height: 30px;
     font-size: 18px;
 }
+
+.connected {
+    background-color: green;
+}
+
+.disconnected {
+    background-color: red
+}
+
+.softreset {
+    background-color: black;
+}
