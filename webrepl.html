@@ -166,19 +166,20 @@ def execute_file(file_name, tmp_file, globals, locals):
 print("Initialization completed")
 `
 
+var NOOP = () => {};
+
 var cpuAnimationInterval = undefined;
 var listeners = {}
 function addListener(eventType, name, cb) {
     var eventKey = eventType + "/" + name;
-    document.addEventListener(eventType, data => {
+    var registeredCallback = data => {
         document.removeEventListener(eventType, listeners[eventKey]);
         delete(listeners[eventKey]);
         cb(data);
-    });
-    listeners[eventKey] = cb;
+    };
+    document.addEventListener(eventType,registeredCallback);
+    listeners[eventKey] = registeredCallback;
 }
-
-
 
 
 var term;
@@ -463,7 +464,7 @@ function sendServiceMessage(message, cb, viewOutput = false) {
         var serviceMessageResponse = e.detail.message.replace(serviceMessageSent,"");
         serviceMessageInProcess = false;
         serviceMessageViewOutput = false;
-        cb(serviceMessageResponse);
+        (cb||NOOP)(serviceMessageResponse);
         stopAnimation();
     });
 
@@ -523,23 +524,13 @@ function decode_resp(data) {
     }
 }
 
-var noop = () => {};
-
-function save_buffer(file_name = undefined, contents = undefined, cb = undefined) {
-    cb = cb || noop;
-    if(file_name == undefined)
-        put_file_name = document.getElementById('put_filename').value;
-    else
-        put_file_name = file_name;
-
+function save_buffer(file_name, contents, cb) {
+    put_file_name = file_name;
     if(put_file_name == "")
         return;
 
-    if(contents == undefined)
-        contents = editor.getValue();
-
     put_file_data = new Uint8Array(contents.split('').map(x => x.charCodeAt(0)));
-    addListener(FILE_PUT_EVENT, put_file_name, e => cb(e.detail));
+    addListener(FILE_PUT_EVENT, put_file_name, e => (cb||NOOP)(e.detail));
     put_file();
 }
 
