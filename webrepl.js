@@ -10,5 +10,8 @@ export var REPL_READY_EVENT = 'REPL_READY_EVENT';
 export var FILETYPE_FOLDER = 0x4000;
 export var FILETYPE_FILE = 0x8000;
 
-export var NOOP = () => {};
+var NOOP = () => {};
 
+export function cleanCallback(cb) {
+    return cb || NOOP;
+}
