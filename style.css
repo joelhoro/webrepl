@@ -31,7 +31,7 @@
   .file-box {
     margin: 4px;
     padding: 4px;
-    background: rgb(43, 3, 26);
+    /* background: rgb(43, 3, 26); */
   }
 
   .buffer {
@@ -51,10 +51,35 @@
     font-weight: 'bold';
     
 }
-  .scratchpad {
-      margin: 20px;
-    /* display:inline-block; */
-    /* float: right; */
-    /* vertical-align:top;  */
-    /* width:450px; */
-  }
+
+.scratchpad {
+    margin: 20px;
+}
+
+button {
+    cursor: pointer;
+    background-color: #524caf;
+    border: none;
+    color: white;
+    padding: 5px 5px;
+    text-align: center;
+    text-decoration: none;
+    display: inline-block;
+    font-size: 16px;
+    border-radius: 3px;
+}
+
+select {
+    border-radius: 5px;
+    height: 34px;
+}
+
+option {
+    height: 30px;
+    font-size: 16px;
+}
+
+input {
+    height: 30px;
+    font-size: 18px;
+}

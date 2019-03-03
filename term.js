@@ -6005,6 +6005,10 @@ if (typeof module !== 'undefined') {
   this.Terminal = Terminal;
 }
 
+// minor change to allow importing
+window.Terminal = Terminal;
+
 }).call(function() {
   return this || (typeof window !== 'undefined' ? window : global);
 }());
+

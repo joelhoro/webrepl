@@ -1,4 +1,5 @@
 export var RESETMACHINE = 'import time, machine; print("Resetting..."); time.sleep(1); machine.reset()'
+export var GETDIRECTORY = "_cwd = os.getcwd(); [ [_cwd+'/'+f,list(os.stat(f))] for f in os.listdir() ]";
 export var STARTUPDEFINITIONS = `
 import os, time, sys
 

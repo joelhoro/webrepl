@@ -7,26 +7,21 @@
   Copyright (c) 2012-2013, Christopher Jeffrey (MIT License)
   Copyright (c) 2016, Paul Sokolovsky
 -->
-<!-- <link href="https://stackpath.bootstrapcdn.com/bootstrap/4.3.1/css/bootstrap.min.css" rel="stylesheet" integrity="sha384-ggOyR0iXCbMQv3Xipma34MD+dH/1fQ784/j6cY/iJTQUOhcWr7x9JvoRxT2MZw1T" crossorigin="anonymous"> -->
 
 <script src="https://ajax.googleapis.com/ajax/libs/angularjs/1.5.6/angular.min.js"></script>
-<script src="term.js"></script>
 <script src="FileSaver.js"></script>
 </head>
 <body>
 
 <div ng-app='webrepl' ng-controller='main'>
 
-
 <table>
     <col width='60%'>
     <col width='40%'>
     <tr>
-        <td>
-    <!-- <div style="display:inline-block; vertical-align:top;"> -->
-            
+        <td>            
             <div id="file-boxes">
-                <input type='button' id='connect_button' value='Connect' onclick="button_click(); return false;" />
+                <button id='connect_button' value='Connect' onclick="button_click(); return false;" ></button>
                 <button onclick="reset(); button_click();">Soft reset</button>
                     <input type="text" name="webrepl_url" id="url" value="ws://ESP2:8266/" />
                     <br>
@@ -34,25 +29,6 @@
 
                         <img id='cpu' src='cpu2.png' width='20' hidden>
                     </h1>
-                    <span ng-click='activate(buffer)' ng-repeat='buffer in buffers' class='buffer {{ buffer == activeBuffer ? "activeBuffer" : ""}}'>
-                        <span   >{{buffer.path}}{{(buffer.isModified()?"*":"")}}</span>
-                        <span class='bufferClose' ng-click='closeBuffer(buffer)'>&nbsp;&nbsp;X</span>
-                    </span>
-                            <textarea ng-model='scratchpad' class='scratchpad' id="scratchpad0" onkeypress='scratchpadKeypress(0,event)' rows="10" cols="80">
-print("Hello")
-for i in range(10):
-    print("Line ", i)
-
-def test():
-    print("Hello")
-
-                                        </textarea>
-                            <i>Ctrl-Enter to send entire scratchpad to REPL<br>
-                            <i>Shift-Enter to send current selection to REPL<br><br>
-                    <div class="file-box">
-                                        <button class='btn' ng-click='saveBuffer()'>Save '{{activeBuffer.path}}</button>
-                                        <button class='btn' ng-click='deleteBuffer()'>Delete '{{activeBuffer.path}}'</button>
-                    </div>
                     
                     <div class="file-box">
                         <button ng-click='refreshDirectories()'>Refresh directory</button> 
@@ -62,13 +38,27 @@ def test():
                                 {{file.displayName}}
                             </option>
                         </select>
+                    </div>
+                    <div class="file-box">
+                        <button class='btn' ng-click='saveBuffer()'>Save '{{activeBuffer.path}}</button>
+                        <button class='btn' ng-click='deleteBuffer()'>Delete '{{activeBuffer.path}}'</button>
                         <button ng-click='runFile()'>Run</button>
                         <button ng-click='importFile()'>Import</button>
                     </div>
-                    
-                    <div class="file-box" id="file-status">...</span></div>                    
-                
+        
+                    <span ng-click='activate(buffer)' ng-repeat='buffer in buffers' class='buffer {{ buffer == activeBuffer ? "activeBuffer" : ""}}'>
+                            <span   >{{buffer.path}}{{(buffer.isModified()?"*":"")}}</span>
+                            <span class='bufferClose' ng-click='closeBuffer(buffer)'>&nbsp;&nbsp;X</span>
+                        </span>
+                                <textarea id='scratchpad' ng-model='scratchpad' class='scratchpad' rows="10" cols="80"></textarea>
+                                <i>Ctrl-Enter to send entire scratchpad to REPL<br>
+                                <i>Shift-Enter to send current selection to REPL<br><br>
+                        
                     </div>
+
+                    <div class="file-box" id="file-status">...</span></div>                    
+
+                    
                     <!-- <br clear="both" /> -->
                     <br>
                     <i>Terminal widget should be focused (text cursor visible) to accept input. Click on it if not.</i><br/>
@@ -102,8 +92,9 @@ def test():
     import * as WR from './webrepl.js';
     import * as Python from './python_snippets.js';
     import * as FileTransfer from './fileTransfer.js';
+    import './term.js';
 
-  var editor = CodeMirror.fromTextArea(document.getElementById("scratchpad0"), {
+  var editor = CodeMirror.fromTextArea(document.getElementById("scratchpad"), {
     lineNumbers: true,
     mode: 'python',
     extraKeys: {
@@ -132,41 +123,6 @@ def test():
     }
   });
 
-/*
-var SERVICE_MESSAGE_EVENT = 'SERVICE_MESSAGE_EVENT';
-var FILE_PUT_EVENT = 'FILE_PUT_EVENT';
-var FILE_GET_EVENT = 'FILE_GET_EVENT';
-
-var FILETYPE_FOLDER = 0x4000;
-var FILETYPE_FILE = 0x8000;
-
-var PYTHON_RESETMACHINE = 'import time, machine; print("Resetting..."); time.sleep(1); machine.reset()'
-var PYTHON_STARTUPDEFINITIONS = `
-import os, time, sys
-
-def execute_file(file_name, tmp_file, globals, locals):
-    text = open(file_name).read()
-    # removing the file before anything bad can happen
-    if tmp_file:
-           os.remove(file_name)
-
-    banner = "========================    %s    ========================"
-    print(banner % file_name)
-    print(text)
-    print("=" * ( len(banner) - 2 + len(file_name) ) )
-    try:
-        start_time = time.ticks_us()
-        exec(text, globals, locals)
-        end_time = time.ticks_us()
-        print("=== %.3fms elapsed" % ((end_time-start_time)/1000.0))
-    except Exception as e:
-        print("Could not run %s: %s" % (file_name,e))
-
-print("Initialization completed")
-`
-
-var NOOP = () => {};
-*/
 var cpuAnimationInterval = undefined;
 var listeners = {}
 function addListener(eventType, name, cb) {
@@ -180,22 +136,11 @@ function addListener(eventType, name, cb) {
     listeners[eventKey] = registeredCallback;
 }
 
-
-/*
-var WR.BINARYSTATE_IDLE = 0;
-var WR.BINARYSTATE_PUT_INITIAL_RESPONSE = 11;
-var WR.BINARYSTATE_PUT_FINAL_RESPONSE = 12;
-var WR.BINARYSTATE_GET_INITIAL_RESPONSE = 21;
-var WR.BINARYSTATE_GET_DATA_TRANSFER = 22;
-var WR.BINARYSTATE_GET_FINAL_RESPONSE = 23;
-var WR.BINARYSTATE_GET_VERSION = 31;
-*/
-
-export var term;
+var term;
 var ws;
 var connected = false;
 var replReady = false;
-var binary_state = WR.BINARYSTATE_IDLE;
+var binary_state = FileTransfer.BINARYSTATE_IDLE;
 
 var put_file_name = null;
 var put_file_data = null;
@@ -252,15 +197,16 @@ function button_click() {
         ws.close();
     } else {
         document.getElementById('url').disabled = true;
-        document.getElementById('connect_button').value = "Disconnect";
+        document.getElementById('connect_button').innerHTML = "Disconnect";
         connected = true;
         connect(document.getElementById('url').value);
     }
 }
 
+
 function prepare_for_connect() {
     document.getElementById('url').disabled = false;
-    document.getElementById('connect_button').value = "Connect";
+    document.getElementById('connect_button').innerHTML = "Connect";
 }
 
 function update_file_status(s) {
@@ -313,19 +259,19 @@ function connect(url) {
             if (event.data instanceof ArrayBuffer) {
                 var data = new Uint8Array(event.data);
                 switch (binary_state) {
-                    case WR.BINARYSTATE_PUT_INITIAL_RESPONSE:
+                    case FileTransfer.BINARYSTATE_PUT_INITIAL_RESPONSE:
                         // first response for put
-                        if (decode_resp(data) == 0) {
+                        if (FileTransfer.decodeResponse(data) == 0) {
                             // send file data in chunks
                             for (var offset = 0; offset < put_file_data.length; offset += 1024) {
                                 ws.send(put_file_data.slice(offset, offset + 1024));
                             }
-                            binary_state = WR.BINARYSTATE_PUT_FINAL_RESPONSE;
+                            binary_state = FileTransfer.BINARYSTATE_PUT_FINAL_RESPONSE;
                         }
                         break;
-                    case WR.BINARYSTATE_PUT_FINAL_RESPONSE:
+                    case FileTransfer.BINARYSTATE_PUT_FINAL_RESPONSE:
                         // final response for put
-                        var success = decode_resp(data) == 0;
+                        var success = FileTransfer.decodeResponse(data) == 0;
                         if (success) {
                             update_file_status('Sent ' + put_file_name + ', ' + put_file_data.length + ' bytes');
                         } else {
@@ -334,27 +280,27 @@ function connect(url) {
                         var fileSaveEvent = new CustomEvent(WR.FILE_PUT_EVENT, { 
                             detail: { success, name: put_file_name }
                         });
-                        binary_state = WR.BINARYSTATE_IDLE;
+                        binary_state = FileTransfer.BINARYSTATE_IDLE;
                         document.dispatchEvent(fileSaveEvent);
                         break;
 
-                    case WR.BINARYSTATE_GET_INITIAL_RESPONSE:
+                    case FileTransfer.BINARYSTATE_GET_INITIAL_RESPONSE:
                         // first response for get
-                        if (decode_resp(data) == 0) {
-                            binary_state = WR.BINARYSTATE_GET_DATA_TRANSFER;
+                        if (FileTransfer.decodeResponse(data) == 0) {
+                            binary_state = FileTransfer.BINARYSTATE_GET_DATA_TRANSFER;
                             var rec = new Uint8Array(1);
                             rec[0] = 0;
                             ws.send(rec);
                         }
                         break;
-                    case WR.BINARYSTATE_GET_DATA_TRANSFER: {
+                    case FileTransfer.BINARYSTATE_GET_DATA_TRANSFER: {
                         // file data
                         var sz = data[0] | (data[1] << 8);
                         if (data.length == 2 + sz) {
                             // we assume that the data comes in single chunks
                             if (sz == 0) {
                                 // end of file
-                                binary_state = WR.BINARYSTATE_GET_FINAL_RESPONSE;
+                                binary_state = FileTransfer.BINARYSTATE_GET_FINAL_RESPONSE;
                             } else {
                                 // accumulate incoming data to get_file_data
                                 var new_buf = new Uint8Array(get_file_data.length + sz);
@@ -368,14 +314,14 @@ function connect(url) {
                                 ws.send(rec);
                             }
                         } else {
-                            binary_state = WR.BINARYSTATE_IDLE;
+                            binary_state = FileTransfer.BINARYSTATE_IDLE;
                         }
                         break;
                     }
-                    case WR.BINARYSTATE_GET_FINAL_RESPONSE:
+                    case FileTransfer.BINARYSTATE_GET_FINAL_RESPONSE:
                         // final response
-                        binary_state = WR.BINARYSTATE_IDLE;
-                        if (decode_resp(data) == 0) {
+                        binary_state = FileTransfer.BINARYSTATE_IDLE;
+                        if (FileTransfer.decodeResponse(data) == 0) {
                             update_file_status('Got ' + get_file_name + ', ' + get_file_data.length + ' bytes');
                             //saveAs(new Blob([get_file_data], {type: "application/octet-stream"}), get_file_name);
 
@@ -392,10 +338,10 @@ function connect(url) {
                         }
                         break;
                         
-                    case WR.BINARYSTATE_GET_VERSION:
+                    case FileTransfer.BINARYSTATE_GET_VERSION:
                         // first (and last) response for GET_VER
                         console.log('GET_VER', data);
-                        binary_state = WR.BINARYSTATE_IDLE;
+                        binary_state = FileTransfer.BINARYSTATE_IDLE;
                         break;
                 }
             }
@@ -512,15 +458,6 @@ function sendText(text) {
 }
 
 
-function decode_resp(data) {
-    if (data[0] == 'W'.charCodeAt(0) && data[1] == 'B'.charCodeAt(0)) {
-        var code = data[2] | (data[3] << 8);
-        return code;
-    } else {
-        console.log("Invalid response: ", data);
-        return -1;
-    }
-}
 
 function save_buffer(file_name, contents, cb) {
     put_file_name = file_name;
@@ -537,7 +474,7 @@ function put_file(dest_fname, dest_data) {
     var rec = FileTransfer.createRequest(FileTransfer.REQUESTTYPE_PUT, dest_fname, dest_fsize);
 
     // initiate put
-    binary_state = WR.BINARYSTATE_PUT_INITIAL_RESPONSE;
+    binary_state = FileTransfer.BINARYSTATE_PUT_INITIAL_RESPONSE;
     update_file_status('Sending ' + put_file_name + '...');
     ws.send(rec);
 }
@@ -547,7 +484,7 @@ function get_file(src_fname, cb) {
     var rec = FileTransfer.createRequest(FileTransfer.REQUESTTYPE_GET, src_fname);
 
     // initiate get
-    binary_state = WR.BINARYSTATE_GET_INITIAL_RESPONSE;
+    binary_state = FileTransfer.BINARYSTATE_GET_INITIAL_RESPONSE;
     get_file_name = src_fname;
     get_file_data = new Uint8Array(0);
     update_file_status('Getting ' + get_file_name + '...');
@@ -557,33 +494,9 @@ function get_file(src_fname, cb) {
 function get_ver() {
     var rec = FileTransfer.createRequest(FileTransfer.REQUESTTYPE_VERSION);
     // initiate GET_VER
-    binary_state = WR.BINARYSTATE_GET_VERSION;
+    binary_state = FileTransfer.BINARYSTATE_GET_VERSION;
     ws.send(rec);
 }
-
-function handle_put_file_select(evt) {
-    // The event holds a FileList object which is a list of File objects,
-    // but we only support single file selection at the moment.
-    var files = evt.target.files;
-
-    // Get the file info and load its data.
-    var f = files[0];
-    put_file_name = f.name;
-    var reader = new FileReader();
-    reader.onload = function(e) {
-        put_file_data = new Uint8Array(e.target.result);
-        document.getElementById('put-file-list').innerHTML = '' + escape(put_file_name) + ' - ' + put_file_data.length + ' bytes';
-        document.getElementById('put-file-button').disabled = false;
-    };
-    reader.readAsArrayBuffer(f);
-}
-
-// document.getElementById('put-file-select').addEventListener('click', function(){
-//     this.value = null;
-// }, false);
-
-// document.getElementById('put-file-select').addEventListener('change', handle_put_file_select, false);
-// document.getElementById('put-file-button').disabled = true;
 
 var bufferIdx = 1;
 class Buffer {
@@ -617,7 +530,7 @@ var app = angular.module('webrepl',[]);
 app
     .controller('main', function($scope) {
         $scope.refreshDirectories = function() {
-            sendServiceMessage("_cwd = os.getcwd(); [ [_cwd+'/'+f,list(os.stat(f))] for f in os.listdir() ]", result => {
+            sendServiceMessage(Python.GETDIRECTORY, result => {
                 var rawfiles = JSON.parse(result.replace(/'/g,'"'));
                 var files = rawfiles.map(record => {
                     var folder = record[1][0] == WR.FILETYPE_FOLDER;
@@ -666,17 +579,18 @@ app
         $scope.changeFolder = function() {
             var file = $scope.files[$scope.activeFileIdx];
             if(file.folder) 
-                sendServiceMessage(`os.chdir("${file.name}")`,
-                () => $scope.refreshDirectories(), false);
+                sendServiceMessage(`os.chdir("${file.name}"); os.getcwd()  ### switching directories`,
+                () => $scope.refreshDirectories(), true);
             else 
                 $scope.getfile();
         }
 
         $scope.runFile = function() {
-            executeFile($scope.fileName, false, true);
+            executeFile($scope.activeBuffer.path, false, true);
         }
         $scope.importFile = function() {
-            var module = $scope.fileName.replace(/.py$/,"");
+            var pathsParts = $scope.activeBuffer.path.split('/'); 
+            var module = pathsParts[pathsParts.length-1].replace(/.py$/,"");
             sendServiceMessage(`import ${module}`, undefined, true);
         }
 
@@ -698,7 +612,7 @@ app
                     // close but do not ask for confirmation
                     $scope.closeBuffer(buffer, false);
                     $scope.refreshDirectories();
-                });
+                }, true);
             }
         }
 
@@ -743,6 +657,10 @@ app
         window.refreshDirectories = $scope.refreshDirectories;
         window.saveBuffer = $scope.saveBuffer;
         window.newBuffer = $scope.newBuffer;
+
+        // and this is because we're using type='module'
+        window.button_click = button_click
+        window.reset = reset;
 
     })
 

@@ -1,6 +1,14 @@
 // @ts-check
 "use strict"
 
+export var BINARYSTATE_IDLE = 0;
+export var BINARYSTATE_PUT_INITIAL_RESPONSE = 11;
+export var BINARYSTATE_PUT_FINAL_RESPONSE = 12;
+export var BINARYSTATE_GET_INITIAL_RESPONSE = 21;
+export var BINARYSTATE_GET_DATA_TRANSFER = 22;
+export var BINARYSTATE_GET_FINAL_RESPONSE = 23;
+export var BINARYSTATE_GET_VERSION = 31;
+
 export var REQUESTTYPE_PUT = "PUT";
 export var REQUESTTYPE_GET = "GET";
 export var REQUESTTYPE_VERSION = "VERSION";
@@ -42,4 +50,14 @@ export function createRequest(type, fileName = undefined, fileSize = undefined) 
     }
     
     return request;
+}
+
+export function decodeResponse(data) {
+    if (data[0] == 'W'.charCodeAt(0) && data[1] == 'B'.charCodeAt(0)) {
+        var code = data[2] | (data[3] << 8);
+        return code;
+    } else {
+        console.log("Invalid response: ", data);
+        return -1;
+    }
 }
