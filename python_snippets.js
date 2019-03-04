@@ -9,17 +9,20 @@ def execute_file(file_name, tmp_file, globals, locals):
     if tmp_file:
            os.remove(file_name)
 
-    banner = "========================    %s    ========================"
+    banner = "\x1b[92m====== FILE ==========    %s    ============================="
     print(banner % file_name)
-    print(text)
-    print("=" * ( len(banner) - 2 + len(file_name) ) )
+    print(text + '\x1b[m')
+    banner2 = "\x1b[94m====== OUTPUT ======"
+    print(banner2, end='')
+    print("=" * ( len(banner) - 2 + len(file_name) - len(banner2) ) )
     try:
         start_time = time.ticks_us()
         exec(text, globals, locals)
         end_time = time.ticks_us()
-        print("=== %.3fms elapsed" % ((end_time-start_time)/1000.0))
+        print('\x1b[m')
+        print("\x1b[93m=== %.3fms elapsed\x1b[m" % ((end_time-start_time)/1000.0))
     except Exception as e:
-        print("Could not run %s: %s" % (file_name,e))
+        print("\x1b[31;1mCould not run %s: %s\x1b[m" % (file_name,e))
 
 print("Initialization completed")
 `

@@ -11,6 +11,7 @@ export var FILETYPE_FOLDER = 0x4000;
 export var FILETYPE_FILE = 0x8000;
 
 var NOOP = () => {};
+export var INVALID_CALLBACK = () => { throw new Error("Not defined") };
 
 export function cleanCallback(cb) {
     return cb || NOOP;

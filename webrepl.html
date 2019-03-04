@@ -23,6 +23,7 @@
             <div id="file-boxes">
                 <button id='connect_button' value='Connect' onclick="button_click(); return false;" ></button>
                 <button class='softreset' onclick="reset(); button_click();">Soft reset</button>
+                    <!-- <input type="text" name="webrepl_url" id="url" value="ws://192.168.4.1:8266/" /> -->
                     <input type="text" name="webrepl_url" id="url" value="ws://ESP2:8266/" />
                     <br>
                     <h1>
@@ -92,9 +93,10 @@
     import * as WR from './webrepl.js';
     import * as Python from './python_snippets.js';
     import * as FileTransfer from './fileTransfer.js';
+    import { TransferState, ServiceMessageState } from './states.js';
     import './term.js';
 
-  var editor = CodeMirror.fromTextArea(document.getElementById("scratchpad"), {
+var editor = CodeMirror.fromTextArea(document.getElementById("scratchpad"), {
     lineNumbers: true,
     mode: 'python',
     extraKeys: {
@@ -133,23 +135,10 @@
         }
 
     }
-  });
+});
 
 var cpuAnimationInterval = undefined;
 var listeners = {}
-function addListener(eventType, name, cb, temporary = true) {
-    var eventKey = eventType + "/" + name;
-    var registeredCallback = event => {
-        if(temporary) {
-            document.removeEventListener(eventType, listeners[eventKey]);
-            delete(listeners[eventKey]);
-        }
-        cb(event.detail);
-    };
-    document.addEventListener(eventType,registeredCallback);
-    listeners[eventKey] = registeredCallback;
-    console.log("Listeners: ", Object.keys(listeners))
-}
 
 var term;
 var ws;
@@ -159,20 +148,8 @@ var connected = false;
 var replReady = false;
 
 // 2 global variables to keep track of transfer / messaging states
-var transferState = {
-    binary_state: FileTransfer.BINARYSTATE_IDLE,
-    put_file_name: null, 
-    put_file_data: null, 
-    get_file_name: null, 
-    get_file_data: null, 
-}
-
-var serviceMessage = {
-    InProcess : false,
-    Response : "",
-    ViewOutput : false,
-}
-
+var transferState = new TransferState();
+var serviceMessageState = new ServiceMessageState();
 
 function calculate_size(win) {
     var cols = Math.max(80, Math.min(120, (win.innerWidth - 500) / 12)) | 0;
@@ -216,7 +193,7 @@ function show_https_warning() {
 }
 
 function reset() {
-    sendServiceMessage(Python.RESETMACHINE)
+    sendServiceMessageState(Python.RESETMACHINE)
 }
 
 function button_click() {
@@ -236,7 +213,6 @@ function button_click() {
         connect(document.getElementById('url').value);
     }
 }
-
 
 function prepare_for_connect() {
     document.getElementById('url').disabled = false;
@@ -297,44 +273,45 @@ function connect(url) {
         ws.onmessage = function(event) {
             if (event.data instanceof ArrayBuffer) {
                 var data = new Uint8Array(event.data);
+
                 switch (transferState.binary_state) {
-                    case FileTransfer.BINARYSTATE_PUT_INITIAL_RESPONSE:
+                    case TransferState.BINARYSTATE_PUT_INITIAL_RESPONSE:
                         // first response for put
                         if (FileTransfer.decodeResponse(data) == 0) {
                             // send file data in chunks
                             for (var offset = 0; offset < transferState.put_file_data.length; offset += 1024) {
                                 sendToSocket(transferState.put_file_data.slice(offset, offset + 1024));
                             }
-                            transferState.binary_state = FileTransfer.BINARYSTATE_PUT_FINAL_RESPONSE;
+                            transferState.binary_state = TransferState.BINARYSTATE_PUT_FINAL_RESPONSE;
                         }
                         break;
-                    case FileTransfer.BINARYSTATE_PUT_FINAL_RESPONSE:
+                    case TransferState.BINARYSTATE_PUT_FINAL_RESPONSE:
                         // final response for put
                         var success = FileTransfer.decodeResponse(data) == 0;
-                        var fileSaveEvent = new CustomEvent(WR.FILE_PUT_EVENT, { 
-                            detail: { success, name: transferState.put_file_name }
-                        });
-                        transferState.binary_state = FileTransfer.BINARYSTATE_IDLE;
-                        document.dispatchEvent(fileSaveEvent);
+                        transferState.binary_state = TransferState.BINARYSTATE_IDLE;
+                    
+                        transferState.Callback(
+                            { success, name: transferState.put_file_name }
+                        );
                         break;
 
-                    case FileTransfer.BINARYSTATE_GET_INITIAL_RESPONSE:
+                    case TransferState.BINARYSTATE_GET_INITIAL_RESPONSE:
                         // first response for get
                         if (FileTransfer.decodeResponse(data) == 0) {
-                            transferState.binary_state = FileTransfer.BINARYSTATE_GET_DATA_TRANSFER;
+                            transferState.binary_state = TransferState.BINARYSTATE_GET_DATA_TRANSFER;
                             var rec = new Uint8Array(1);
                             rec[0] = 0;
                             sendToSocket(rec);
                         }
                         break;
-                    case FileTransfer.BINARYSTATE_GET_DATA_TRANSFER: {
+                    case TransferState.BINARYSTATE_GET_DATA_TRANSFER: {
                         // file data
                         var sz = data[0] | (data[1] << 8);
                         if (data.length == 2 + sz) {
                             // we assume that the data comes in single chunks
                             if (sz == 0) {
                                 // end of file
-                                transferState.binary_state = FileTransfer.BINARYSTATE_GET_FINAL_RESPONSE;
+                                transferState.binary_state = TransferState.BINARYSTATE_GET_FINAL_RESPONSE;
                             } else {
                                 // accumulate incoming data to transferState.get_file_data
                                 var new_buf = new Uint8Array(transferState.get_file_data.length + sz);
@@ -348,51 +325,48 @@ function connect(url) {
                                 sendToSocket(rec);
                             }
                         } else {
-                            transferState.binary_state = FileTransfer.BINARYSTATE_IDLE;
+                            transferState.binary_state = TransferState.BINARYSTATE_IDLE;
                         }
                         break;
                     }
-                    case FileTransfer.BINARYSTATE_GET_FINAL_RESPONSE:
+                    case TransferState.BINARYSTATE_GET_FINAL_RESPONSE:
                         // final response
-                        transferState.binary_state = FileTransfer.BINARYSTATE_IDLE;
+                        transferState.binary_state = TransferState.BINARYSTATE_IDLE;
                         var success = FileTransfer.decodeResponse(data) == 0;
-                        var fileGetEvent = new CustomEvent(WR.FILE_GET_EVENT, { 
-                            detail: { 
-                                success,
-                                contentBinary: transferState.get_file_data, 
-                                name: transferState.get_file_name 
+                        transferState.Callback(
+                            { 
+                                 success,
+                                 contentBinary: transferState.get_file_data, 
+                                 name: transferState.get_file_name 
                             }
-                        });
-                        document.dispatchEvent(fileGetEvent);
+                        )
 
                         break;
                         
-                    case FileTransfer.BINARYSTATE_GET_VERSION:
+                    case TransferState.BINARYSTATE_GET_VERSION:
                         // first (and last) response for GET_VER
                         console.log('GET_VER', data);
-                        transferState.binary_state = FileTransfer.BINARYSTATE_IDLE;
+                        transferState.binary_state = TransferState.BINARYSTATE_IDLE;
                         break;
                 }
             }
-            else if(serviceMessage.InProcess) {
+            else if(serviceMessageState.active) {
                 if(event.data == '>>> ') {                    
-                    if(serviceMessage.ViewOutput) {
-                        term.write(serviceMessage.Response);
+                    if(serviceMessageState.ViewOutput) {
+                        term.write(serviceMessageState.Response);
                         term.write(getPrompt(event.data));
                     }
                     else
-                        console.log("Complete message: ", serviceMessage.Response);
+                        console.log("Complete message: ", serviceMessageState.Response);
 
-                    var serviceMessageEventCompleted = new CustomEvent(WR.SERVICE_MESSAGE_EVENT, {
-                        detail: {
-                            message: serviceMessage.Response
+                    serviceMessageState.Callback(
+                        {
+                            message: serviceMessageState.Response
                         }
-                    });
-
-                    document.dispatchEvent(serviceMessageEventCompleted)
+                    )
                 }
                 else {
-                    serviceMessage.Response += event.data;
+                    serviceMessageState.Response += event.data;
                 }
             }
             else {
@@ -431,31 +405,26 @@ function stopAnimation() {
     document.getElementById('cpu').hidden = true;
 }
 
-function sendServiceMessage(message, cb, viewOutput = false) {
-    if(serviceMessage.InProcess) {
+function sendServiceMessageState(message, cb, viewOutput = false) {
+    if(serviceMessageState.active) {
         console.log("Service message already in process");
         return;
     }
 
     startAnimation();
-    serviceMessage.ViewOutput = viewOutput;
+    serviceMessageState.ViewOutput = viewOutput;
     console.log("Sending service message: ", message);
-    var serviceMessageSent = message + "\r\n";
+    var serviceMessageStateSent = message + "\r\n";
 
-    serviceMessage.InProcess = true;
-    serviceMessage.Response = "";
-
-    addListener(WR.SERVICE_MESSAGE_EVENT, serviceMessageSent, function(detail) {
-        if(serviceMessage.ViewOutput)
+    serviceMessageState.setCallback(function(detail) {
+        if(serviceMessageState.ViewOutput)
             console.log("Received response: ", detail.message);
-        var response = detail.message.replace(serviceMessageSent,"");
-        serviceMessage.InProcess = false;
-        serviceMessage.ViewOutput = false;
+        var response = detail.message.replace(serviceMessageStateSent,"");
         WR.cleanCallback(cb)(response);
         stopAnimation();
     });
 
-    sendToSocket(serviceMessageSent);
+    sendToSocket(serviceMessageStateSent);
 }
 
 var startUpReady = false;
@@ -472,7 +441,7 @@ function checkStartUp(cb) {
 
 function executeFile(fileName, useTempName = false, viewOutput) {
     var deleteFile = useTempName ? "True" : "False"
-    sendServiceMessage(Python.executeFileCommand(fileName, deleteFile), undefined, viewOutput); 
+    sendServiceMessageState(Python.executeFileCommand(fileName, deleteFile), undefined, viewOutput); 
 }
 
 function sendText(text) {
@@ -493,7 +462,8 @@ function save_buffer(file_name, contents, cb) {
         return;
 
     transferState.put_file_data = new Uint8Array(contents.split('').map(x => x.charCodeAt(0)));
-    addListener(WR.FILE_PUT_EVENT, transferState.put_file_name, detail => {
+
+    transferState.setCallback(detail => {
         if (detail.success) {
             update_file_status('Sent ' + transferState.put_file_name + ', ' + transferState.put_file_data.length + ' bytes');
         } else {
@@ -510,13 +480,13 @@ function put_file(dest_fname, dest_data) {
     var rec = FileTransfer.createRequest(FileTransfer.REQUESTTYPE_PUT, dest_fname, dest_fsize);
 
     // initiate put
-    transferState.binary_state = FileTransfer.BINARYSTATE_PUT_INITIAL_RESPONSE;
+    transferState.binary_state = TransferState.BINARYSTATE_PUT_INITIAL_RESPONSE;
     update_file_status('Sending ' + transferState.put_file_name + '...');
     sendToSocket(rec);
 }
 
 function get_file(src_fname, cb) {
-    addListener(WR.FILE_GET_EVENT, src_fname, detail => {
+    transferState.setCallback(detail => {
         if (detail.success) {
             update_file_status('Got ' + transferState.get_file_name + ', ' + transferState.get_file_data.length + ' bytes');
         } else {
@@ -524,11 +494,11 @@ function get_file(src_fname, cb) {
         }
 
         cb(detail);
-    })
+    });
     var rec = FileTransfer.createRequest(FileTransfer.REQUESTTYPE_GET, src_fname);
 
     // initiate get
-    transferState.binary_state = FileTransfer.BINARYSTATE_GET_INITIAL_RESPONSE;
+    transferState.binary_state = TransferState.BINARYSTATE_GET_INITIAL_RESPONSE;
     transferState.get_file_name = src_fname;
     transferState.get_file_data = new Uint8Array(0);
     update_file_status('Getting ' + transferState.get_file_name + '...');
@@ -538,7 +508,7 @@ function get_file(src_fname, cb) {
 function get_ver() {
     var rec = FileTransfer.createRequest(FileTransfer.REQUESTTYPE_VERSION);
     // initiate GET_VER
-    transferState.binary_state = FileTransfer.BINARYSTATE_GET_VERSION;
+    transferState.binary_state = TransferState.BINARYSTATE_GET_VERSION;
     sendToSocket(rec);
 }
 
@@ -574,7 +544,7 @@ var app = angular.module('webrepl',[]);
 app
     .controller('main', function($scope) {
         $scope.refreshDirectories = function() {
-            sendServiceMessage(Python.GETDIRECTORY, result => {
+            sendServiceMessageState(Python.GETDIRECTORY, result => {
                 var rawfiles = JSON.parse(result.replace(/'/g,'"'));
                 var files = rawfiles.map(record => {
                     var folder = record[1][0] == WR.FILETYPE_FOLDER;
@@ -612,7 +582,7 @@ app
         $scope.changeFileSelection = function() {
             var file = $scope.files[$scope.activeFileIdx];
             if(file.folder) {
-                sendServiceMessage(`os.chdir("${file.name}"); os.getcwd()  ### switching directories`,
+                sendServiceMessageState(`os.chdir("${file.name}"); os.getcwd()  ### switching directories`,
                 () => $scope.refreshDirectories(), true);
             }
             else {
@@ -635,7 +605,7 @@ app
         $scope.importFile = function() {
             var pathsParts = $scope.activeBuffer.path.split('/'); 
             var module = pathsParts[pathsParts.length-1].replace(/.py$/,"");
-            sendServiceMessage(`import ${module}`, undefined, true);
+            sendServiceMessageState(`import ${module}`, undefined, true);
         }
 
         $scope.updateScratchpad = function() {
@@ -664,7 +634,7 @@ app
             var buffer = $scope.activeBuffer;
             if(confirm(`Are you sure you want to delete ${buffer.path}`)) {
                 var command = `os.remove('${buffer.path}')`;
-                sendServiceMessage(command, result => {
+                sendServiceMessageState(command, result => {
                     // close but do not ask for confirmation
                     $scope.closeBuffer(buffer, false);
                     $scope.refreshDirectories();
@@ -712,7 +682,8 @@ app
         window.button_click = button_click
         window.reset = reset;
 
-        addListener(WR.REPL_READY_EVENT, undefined, detail => {
+        document.addEventListener(WR.REPL_READY_EVENT, ev => {
+            var detail = ev.detail;
             if(detail.ready)
                 $scope.refreshDirectories()
             else {
