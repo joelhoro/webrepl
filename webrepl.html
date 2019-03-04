@@ -33,8 +33,6 @@
                     
                     <div ng-show='files.length > 0' class="file-box">
                         <button ng-click='refreshDirectories()'>Refresh directory</button> 
-                        <select  id='fileSelector' ng-model='activeFileIdx' ng-change="changeFileSelection()">
-                            <option ng-repeat='file in files track by $index' value='{{$index}}'>
                                 {{file.displayName}}
                             </option>
                         </select>
@@ -255,6 +253,8 @@ function connect(url) {
         console.log("Sending to socket: ", data);
         ws.send(data);
     }
+    window.sendToSocket = sendToSocket;
+
     ws.binaryType = 'arraybuffer';
     
     ws.onopen = function() {
@@ -363,7 +363,6 @@ function connect(url) {
             else if(serviceMessageState.active) {
                 if(event.data == '>>> ') {                    
                     if(serviceMessageState.ViewOutput) {
-                        term.write(serviceMessageState.Response);
                         term.write(getPrompt(event.data));
                     }
                     else
@@ -378,6 +377,9 @@ function connect(url) {
                 else {
                     serviceMessageState.Response += event.data;
                 }
+
+                if(serviceMessageState.ViewOutput)
+                    term.write(getPrompt(event.data));
             }
             else {
                 replReady = true;
@@ -528,12 +530,14 @@ class Buffer {
         this.path = path;
         this.originalContents = contents;
         this.contents = contents;
+        this.isTitled = true;
     }
 
     static blank() {
         var name = `/Untitled${bufferIdx++}.py`;
         var blankContents = "### " + name + "\n\n";
         var buffer = new Buffer(name, blankContents);
+        buffer.isTitled = false;
         return buffer;
     }
 
@@ -567,16 +571,17 @@ app
                 });
                 
                 files = files.map(record => {
-                    record.displayName = (record.folder?"<--- " : "") + record.name
-                        + (record.folder?" --->" : "")
-                        if(!record.folder)
-                            record.displayName += ` (${record.size} bytes)`;
-                        return record;
-                    });
+                    var shortName = record.name.replace(/.*\//,"");
+                    var leftArrow = (record.folder?"<--- " : "");
+                    var rightArrow = (record.folder?" --->" : "")
+                    var sizeInfo = record.folder ? "" : ` (${record.size} bytes)`;
+                    record.displayName = leftArrow + shortName + rightArrow + sizeInfo;
+                    return record;
+                });
                     
-                    files.sort((r1,r2) => {
-                        return r1.displayName < r2.displayName ? 1 : -1 
-                    });
+                files.sort((r1,r2) => {
+                    return r1.displayName < r2.displayName ? -1 : 1 
+                });
                     
                 files = [
                     {displayName: "..", name: "..", size: 0, folder: true }
@@ -678,7 +683,19 @@ app
         })
 
         $scope.saveBuffer = function() {
+            var refresh = false;
+            if(!$scope.activeBuffer.isTitled) {
+                var name = "Please rename the file";
+                var newName = prompt(name, $scope.activeBuffer.path);
+                if(newName == null || newName == "")
+                    return;
+                $scope.activeBuffer.path = "/" + newName;
+                $scope.activeBuffer.isTitled = true;
+                refresh = true;
+            }
             $scope.activeBuffer.save();
+            if(refresh)
+                $scope.refreshDirectories();
         }
 
         // QUICK HACK REALLY - we should combine the angular
@@ -691,6 +708,7 @@ app
         // and this is because we're using type='module'
         window.button_click = button_click
         window.reset = reset;
+
 
         document.addEventListener(WR.REPL_READY_EVENT, ev => {
             var detail = ev.detail;
