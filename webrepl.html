@@ -90,6 +90,14 @@
 <script type='module'>
 // @ts-check
 "use strict"
+
+/////////////// SETTINGS
+
+var SETTING_AUTOLOGIN = true;
+var SETTING_PASSWORD = "";
+
+////////////////////////////////////////////////////
+
     import * as WR from './webrepl.js';
     import * as Python from './python_snippets.js';
     import * as FileTransfer from './fileTransfer.js';
@@ -250,7 +258,9 @@ function connect(url) {
     ws.binaryType = 'arraybuffer';
     
     ws.onopen = function() {
-        sendToSocket("\n");
+        if(SETTING_AUTOLOGIN)
+            sendToSocket(SETTING_PASSWORD + "\n");
+
         // just to see that there's someone out there...
         get_ver();
 
