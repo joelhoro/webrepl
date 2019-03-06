@@ -1,0 +1,29 @@
+{
+  "name": "webserialrepl_micropython",
+  "version": "1.0.0",
+  "description": "WebREPL client for MicroPython\r ==============================",
+  "main": "webrepl.js",
+  "directories": {
+    "lib": "lib"
+  },
+  "dependencies": {
+    "express": "^4.16.4",
+    "serialport": "^7.1.4",
+    "ws": "^6.1.4"
+  },
+  "devDependencies": {},
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "start": "node server.js"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/joelhoro/webrepl.git"
+  },
+  "author": "",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/joelhoro/webrepl/issues"
+  },
+  "homepage": "https://github.com/joelhoro/webrepl#readme"
+}

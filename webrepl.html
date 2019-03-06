@@ -1,4 +1,10 @@
-<!doctype html>
+<!-- <!doctype html> -->
+<!-- <meta http-equiv="Content-Security-Policy"
+    content="default-src 'self' 'unsafe-eval';
+  style-src 'self' 'unsafe-inline';
+  media-src *;
+  script-src 'sha256-8HVXI+/KtH/G0uR32D3hZUdOP595FXXWQVLhmECxJwM='
+"> -->
 <html>
 <head>
 <title>MicroPython WebREPL</title>
@@ -8,7 +14,7 @@
   Copyright (c) 2016, Paul Sokolovsky
 -->
 
-<script src="https://ajax.googleapis.com/ajax/libs/angularjs/1.5.6/angular.min.js"></script>
+<script src="lib/angular.min.js"></script>
 <script src="FileSaver.js"></script>
 </head>
 <body>
@@ -25,6 +31,13 @@
                 <button class='softreset' onclick="reset(); button_click();">Soft reset</button>
                     <!-- <input type="text" name="webrepl_url" id="url" value="ws://192.168.4.1:8266/" /> -->
                     <input type="text" name="webrepl_url" id="url" value="ws://ESP2:8266/" />
+                    <select ng-model='port'>
+                        <option ng-selected='$index==0' ng-repeat='portOption in ports'>{{portOption.comName}} ({{portOption.manufacturer}})</option>
+                    </select>
+                    <select  ng-model='baudrate'>
+                        <option  ng-repeat='baudrateOption in [9600,115200]'>{{baudrateOption}}</option>
+                    </select>
+                    <button ng-click='connectSerial()'>Connect</button>
                     <br>
                     <h1>
 
@@ -33,6 +46,8 @@
                     
                     <div ng-show='files.length > 0' class="file-box">
                         <button ng-click='refreshDirectories()'>Refresh directory</button> 
+                        <select required  id='fileSelector' ng-model='activeFileIdx' ng-change="changeFileSelection()">
+                            <option {{($index==0)?"selected":""}} ng-repeat='file in files track by $index' value='{{$index}}'>
                                 {{file.displayName}}
                             </option>
                         </select>
@@ -68,7 +83,7 @@
         </td>
         <td>
             <div class='terminal' id="term">
-                    <h1>REPL</h1>
+                    <h1>REPL ({{port.comName}} - {{port.manufacturer}})</h1>
                     
             </div>
         </td>
@@ -82,8 +97,8 @@
 
 <link rel="stylesheet" href="style.css">
 <link rel="stylesheet" href="lib/codemirror.css">
-<script src="https://cdn.jsdelivr.net/npm/codemirror@5.44.0/lib/codemirror.min.js"></script>
-<script src='https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.44.0/mode/python/python.min.js'></script>
+<script src="lib/codemirror.min.js"></script>
+<script src='lib/python.min.js'></script>
 
 <script type='module'>
 // @ts-check
@@ -101,6 +116,7 @@ var SETTING_PASSWORD = "";
     import * as FileTransfer from './fileTransfer.js';
     import { TransferState, ServiceMessageState } from './states.js';
     import './term.js';
+
 
 var editor = CodeMirror.fromTextArea(document.getElementById("scratchpad"), {
     lineNumbers: true,
@@ -163,6 +179,24 @@ function calculate_size(win) {
     return [cols, rows];
 }
 
+function startTerminal(term) {
+    term.removeAllListeners('data');
+    term.on('data', function(data) {
+        // Pasted data from clipboard will likely contain
+        // LF as EOL chars.
+        data = data.replace(/\n/g, "\r");
+        sendSerial(data);
+    });
+
+    term.on('title', function(title) {
+        document.title = title;
+    });
+
+    term.focus();
+    term.element.focus();
+    term.write('\x1b[32mWelcome to MicroPython!\x1b[m\r\n');
+}
+
 (function() {
     window.onload = function() {
       var size = calculate_size(self);
@@ -176,7 +210,7 @@ function calculate_size(win) {
       });
       term.open(document.getElementById("term"));
       show_https_warning();
-      button_click();
+      connectSocket();
     };
     window.addEventListener('resize', function() {
         var size = calculate_size(self);
@@ -247,6 +281,51 @@ function getPrompt(data) {
     return data;
 }
 
+function connectSocket() {
+    window.ws2 = new WebSocket("ws://localhost:9000");
+
+    function sendSocketMessage(type, contents) {
+        ws2.send(JSON.stringify({type,contents}));
+    }
+    window.sendSocketMessage = sendSocketMessage;
+
+    ws2.onopen = function() {
+        
+        ws2.onmessage = function(event) {
+            var message = JSON.parse(event.data);
+            var data = message.contents;
+            if(message.type == 'data') {
+                var decoded = fromBinary(data.data);
+                if(ServiceMessageState.ViewOutput)
+                    term.write(decoded);
+                if(decoded.indexOf(">>> ")>=0) {
+                    serviceMessageState.Response += decoded.replace("\n>>> ","")
+                    serviceMessageState.Callback({
+                        message: serviceMessageState.Response
+                    })
+                }
+                else
+                    serviceMessageState.Response += decoded;
+                
+                console.log("Received on ws2: ", decoded);
+            }
+            if(message.type == 'ports') {
+                setPorts(data);
+            }
+        }
+
+        sendSocketMessage('ports');
+        connectSerial();
+        startTerminal(term);
+        //sendSerial("1+3\r\n");
+    }
+
+    window.sendSerial = function(text) {
+        sendSocketMessage('serial', text);
+    }
+
+}
+
 function connect(url) {
     ws = new WebSocket(url);
     sendToSocket = data => {
@@ -258,27 +337,14 @@ function connect(url) {
     ws.binaryType = 'arraybuffer';
     
     ws.onopen = function() {
+
+        startTerminal(term);
         if(SETTING_AUTOLOGIN)
             sendToSocket(SETTING_PASSWORD + "\n");
 
         // just to see that there's someone out there...
         get_ver();
 
-        term.removeAllListeners('data');
-        term.on('data', function(data) {
-            // Pasted data from clipboard will likely contain
-            // LF as EOL chars.
-            data = data.replace(/\n/g, "\r");
-            sendToSocket(data);
-        });
-
-        term.on('title', function(title) {
-            document.title = title;
-        });
-
-        term.focus();
-        term.element.focus();
-        term.write('\x1b[32mWelcome to MicroPython!\x1b[m\r\n');
 
         ws.onmessage = function(event) {
             if (event.data instanceof ArrayBuffer) {
@@ -363,6 +429,7 @@ function connect(url) {
             else if(serviceMessageState.active) {
                 if(event.data == '>>> ') {                    
                     if(serviceMessageState.ViewOutput) {
+                        //term.write(serviceMessageState.Response);
                         term.write(getPrompt(event.data));
                     }
                     else
@@ -383,7 +450,7 @@ function connect(url) {
             }
             else {
                 replReady = true;
-                term.write(getPrompt(event.data));
+                //term.write(getPrompt(event.data));
             }
         };
     };
@@ -436,7 +503,7 @@ function sendServiceMessageState(message, cb, viewOutput = false) {
         stopAnimation();
     });
 
-    sendToSocket(serviceMessageStateSent);
+    sendSerial(serviceMessageStateSent, true);
 }
 
 var startUpReady = false;
@@ -457,6 +524,12 @@ function executeFile(fileName, useTempName = false, viewOutput) {
 }
 
 function sendText(text) {
+    sendSerial(String.fromCharCode(5));
+    sendSerial(text.replace(/\n/g,"\r\n"));
+    sendSerial(String.fromCharCode(4));
+
+    return;
+
     checkStartUp(() => {
         // the reason we need to do it this way is that when sending text as is, the server automatically
         // adds indentation to help in interactive mode
@@ -467,13 +540,20 @@ function sendText(text) {
 }
 
 
+function toBinary(contents) {
+    return new Uint8Array(contents.split('').map(x => x.charCodeAt(0)));
+}
+
+function fromBinary(binary) {
+    return Array.from(binary).map(x => String.fromCharCode(x)).join(''); 
+}
 
 function save_buffer(file_name, contents, cb) {
     transferState.put_file_name = file_name;
     if(transferState.put_file_name == "")
         return;
 
-    transferState.put_file_data = new Uint8Array(contents.split('').map(x => x.charCodeAt(0)));
+    transferState.put_file_data = toBinary(contents);
 
     transferState.setCallback(detail => {
         if (detail.success) {
@@ -606,7 +686,7 @@ app
                     $scope.activateBuffer(buffers[0])
                 else
                     get_file(file.name, detail => {
-                        var contentText = Array.from(detail.contentBinary).map(x => String.fromCharCode(x)).join(''); 
+                        var contentText = fromBinary(detail.contentBinary);
                         var buffer = new Buffer(file.name, contentText);
                         $scope.addBuffer(buffer);
                         $scope.$apply();
@@ -698,12 +778,32 @@ app
                 $scope.refreshDirectories();
         }
 
+        $scope.setPorts = function(ports) {
+            $scope.ports = ports;
+            if(ports.length>0)
+                $scope.port = ports[0];
+            $scope.$apply();
+        }
+
+        $scope.connectSerial = function() {
+            sendSocketMessage('connect', {
+                port: $scope.port.comName,
+                baudrate: $scope.baudrate
+            });
+        }
+
+        $scope.port = { comName: "COM3" };
+        $scope.baudrate = 115200;
+
         // QUICK HACK REALLY - we should combine the angular
         // code and the non-angular one
         window.saveBuffer = $scope.saveBuffer;
         window.newBuffer = $scope.newBuffer;
         window.deleteBuffer = $scope.deleteBuffer;
         window.closeBuffer = $scope.closeBuffer;
+        window.setPorts = $scope.setPorts;
+        window.connectSerial = $scope.connectSerial;
+        window.refreshDirectories = $scope.refreshDirectories;
 
         // and this is because we're using type='module'
         window.button_click = button_click
