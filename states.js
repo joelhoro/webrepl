@@ -1,4 +1,5 @@
-
+// @ts-check
+"use strict"
 
 class CallbackState {
     constructor() {
@@ -60,7 +61,23 @@ export class ServiceMessageState extends CallbackState {
         super();
         this.reset();
     }
-    
+
+    addMessageChunk(message, cb) {
+        if(this.ViewOutput || !this.active)
+            cb(message);
+
+        if(!this.active)
+            return;
+
+        this.Response += message;
+        if(this.Response.endsWith(">>> ")) {
+            this.Response = this.Response.replace(/\n>>> $/,"");
+            this.Callback({
+                message: this.Response
+            })
+        }
+    }
+
     reset() {
         super.reset();
         this.Response = "";
